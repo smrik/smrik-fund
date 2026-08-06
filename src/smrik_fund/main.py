@@ -1,5 +1,7 @@
 import typer
-from smrik_fund.shell import run_shell
+from pathlib import Path
+
+from smrik_fund.legacy import DEFAULT_LEGACY_REPO, run_legacy_pipeline
 
 app = typer.Typer(
     no_args_is_help=True, help="A small fundamental investment research system."
@@ -16,12 +18,6 @@ def hello(name: str = "world") -> None:
 def status() -> None:
 
     typer.echo("smrik-fund alive and working :)")
-
-
-@app.command()
-def shell() -> None:
-    """Open the interactive research shell."""
-    run_shell()
 
 
 @app.command()

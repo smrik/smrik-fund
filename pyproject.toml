@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "prompt-toolkit>=3.0.53",
     "typer>=0.27.1",
 ]
 
