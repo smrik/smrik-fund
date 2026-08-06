@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from smrik-fund!")
+"""smrik-fund package."""

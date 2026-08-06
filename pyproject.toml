@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-smrik-fund = "smrik_fund:main"
+smrik-fund = "smrik_fund.main:app"
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
