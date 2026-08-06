@@ -1,7 +1,4 @@
 import typer
-from pathlib import Path
-
-from smrik_fund.legacy import DEFAULT_LEGACY_REPO, run_legacy_pipeline
 
 app = typer.Typer(
     no_args_is_help=True, help="A small fundamental investment research system."

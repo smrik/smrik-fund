@@ -1,6 +1,5 @@
-from pathlib import Path
 import subprocess
-
+from pathlib import Path
 
 DEFAULT_LEGACY_REPO = Path(r"C:\Projects\03-Finance\ai-fund")
 
