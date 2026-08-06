@@ -1,0 +1,19 @@
+{
+  "by_statement": {
+    "balance_sheet": 208,
+    "cash_flow_statement": 97,
+    "income_statement": 133
+  },
+  "concept_count": 80,
+  "fact_count": 438,
+  "period_count": 5,
+  "periods": [
+    "2023-06-30",
+    "2023-10-13",
+    "2024-06-30",
+    "2025-06-30",
+    "2026-06-30"
+  ],
+  "source": "edgar",
+  "ticker": "MSFT"
+}
