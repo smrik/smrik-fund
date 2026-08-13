@@ -1,27 +1,27 @@
 # Session State
 
-**Updated:** 2026-08-06 22:26:00 +02:00
+**Updated:** 2026-08-11 16:30:31 +02:00
 **Agent:** Codex CLI
-**Project:** C:\Projects\04-Learning\smrik-fund
+**Project:** C:\Projects\finance\smrik-fund
 
 ## Current Task
-Align the EDGAR statement export with the machine-readable ingestion contract used by `C:\Projects\03-Finance\ai-fund`.
+Complete Section 2 Task 1: inspect and document the actual MSFT EdgarTools statement output shape.
 
 ## Recent Actions
-- Reviewed the current statement parser and Excel export in this repository.
-- Reviewed the `ai-fund` artifact pipeline, fact-row schema, and XBRL evidence fields.
-- Confirmed that a long-form CSV fact ledger is a better handoff than three wide statement CSV files.
-- No source edits were made after the prior Excel implementation. Waiting for approval of the target layout.
+- Created `scripts/inspect_msft_edgartools.py` as a direct, read-only EdgarTools inspector.
+- Ran it against the latest MSFT 10-K: accession `0001193125-26-323660`, period `2026-06-30`.
+- Documented the real statement shapes, periods, signs, hierarchy metadata, raw XBRL fields, and dimensional/duplicate-risk findings in `docs/edgartools_msft_shape.md`.
+- Updated the Task 1 plan to record that the standard balance sheet returns two instant periods while income and cash flow return three annual duration periods.
+- Removed generated `scripts/__pycache__` and `.pytest_cache` artifacts.
 
 ## Next Steps
-- After approval, add failing tests for the `ai-fund`-compatible files.
-- Implement `facts.csv`, `manifest.json`, and `filings.jsonl` output under `data/ingestion/<TICKER>/`.
-- Verify the output with more than one ticker and keep the default export machine-readable.
+- Review the Task 1 findings before starting Task 2.
+- Task 2 may build a derived analytical view only after accounting for the different duration and instant period layouts.
 
 ## Known Issues
-- Focused tests and lint pass. Full `ruff check src tests` still reports pre-existing undefined `get_read_only_connection` and `load_statement_facts` references in `ingestion/edgar.py`.
+- `uv --cache-dir "$env:TEMP\\smrik-fund-uv-cache" run pytest tests\\test_statements.py -q` reaches collection but fails because its Python 3.11 runner lacks Pandas. No dependency changes were made.
+- `.serena/project.yml` contains the metadata change made by required Serena project activation.
 
 ## Notes
-- The current default export is still Excel under `data/<TICKER>/`; it is pending replacement or demotion to an optional debug export.
-- The `ai-fund` contract uses CSV for tables, JSON for metadata, and JSONL for filing records.
-- SEC runs use `SMRIK_EDGAR_USER_AGENT` when set, otherwise the project default.
+- The Task 1 implementation intentionally does not modify `src/`, `tests/`, the CLI, mappings, analytical P&L logic, or generated data artifacts.
+- Real-data validation used the repository `.venv` and EdgarTools 5.45.1.
