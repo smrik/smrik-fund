@@ -184,7 +184,11 @@ Only reconsider it if CSV becomes a real performance or type-preservation proble
 ```text
 data/
 └── MSFT/
-    └── processed/
+    ├── 01_source/
+    │   └── edgar/
+    ├── 02_processing/
+    │   └── edgar/
+    └── 03_output/
         ├── analytical_pnl.csv
         ├── adjusted_pnl.csv
         ├── adjustment_history.csv
@@ -320,7 +324,7 @@ They do not decide that an adjustment exists.
 ### Saved output
 
 ```text
-data/MSFT/processed/analytical_pnl.csv
+data/MSFT/03_output/analytical_pnl.csv
 ```
 
 ### LLM formatting
@@ -489,7 +493,7 @@ Operating Income ties
 ### Saved output
 
 ```text
-data/MSFT/processed/reconciliation_checks.csv
+data/MSFT/03_output/reconciliation_checks.csv
 ```
 
 Suggested columns:
@@ -540,7 +544,7 @@ Save it as Markdown.
 Example:
 
 ```text
-data/MSFT/processed/evidence/restructuring.md
+data/MSFT/03_output/evidence/restructuring.md
 ```
 
 ### Topic-based design
@@ -675,7 +679,7 @@ They always require human review in V1.
 ### Saved output
 
 ```text
-data/MSFT/processed/analysis/<topic>_<run_id>.json
+data/MSFT/03_output/analysis/<topic>_<run_id>.json
 ```
 
 Store at least:
@@ -842,7 +846,7 @@ Do not decide by intuition alone.
 ### Saved output
 
 ```text
-data/MSFT/processed/reviews/<adjustment_id>_<run_id>.json
+data/MSFT/03_output/reviews/<adjustment_id>_<run_id>.json
 ```
 
 ---

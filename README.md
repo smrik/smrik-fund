@@ -1,35 +1,25 @@
 # smrik-fund
 
-Parse the latest 10-K for one ticker:
+Small MSFT V1 pipeline for EdgarTools statements, analytical P&L, and source
+reconciliation.
+
+Run the current paths:
 
 ```powershell
-smrik-fund parse MSFT
+smrik-fund analyze MSFT
+smrik-fund reconcile MSFT
 ```
 
-The command writes machine-readable files:
+Outputs:
 
 ```text
-data/ingestion/MSFT/
-  01_2_edgar/
-    filing_index.csv
-    manifest.json
-    filings/<accession>.txt
-  02_preprocessing/edgar/
-    facts.csv
-    coverage.json
+data/MSFT/03_output/
+  analytical_pnl.csv
+  reconciliation_checks.csv
 ```
 
-`facts.csv` has one row per numeric XBRL fact. It keeps both the original
-`concept` and the cross-company `standard_concept`.
-
-The command also prints the three standard-view statement dimensions and the
-fact count.
-
-Code structure:
-
-- `ingestion/statements.py` is the small public interface.
-- `ingestion/parser.py` loads EdgarTools and builds the statements.
-- `ingestion/facts.py` creates one normalized row per numeric fact.
-- `ingestion/artifacts.py` writes the CSV, JSON, and filing files.
+The statement loader uses EdgarTools' standard DataFrames and preserves source
+periods, signs, missing values, and statement metadata. Reconciliation records
+reported subtotals, differences, and skipped checks without creating plugs.
 
 Set `SMRIK_EDGAR_USER_AGENT` to use your SEC user-agent string.

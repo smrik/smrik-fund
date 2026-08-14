@@ -1,9 +1,0 @@
-accession,filing_date,form_type,period_of_report,source_url,output_path
-0001193125-26-323660,2026-07-29,10-K,2026-06-30,https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm,data\01_source\MSFT\filings\0001193125-26-323660.txt
-0000950170-25-100235,2025-07-30,10-K,2025-06-30,https://www.sec.gov/Archives/edgar/data/789019/000095017025100235/msft-20250630.htm,data\01_source\MSFT\filings\0000950170-25-100235.txt
-0001193125-26-191507,2026-04-29,10-Q,2026-03-31,https://www.sec.gov/Archives/edgar/data/789019/000119312526191507/msft-20260331.htm,data\01_source\MSFT\filings\0001193125-26-191507.txt
-0001193125-26-027207,2026-01-28,10-Q,2025-12-31,https://www.sec.gov/Archives/edgar/data/789019/000119312526027207/msft-20251231.htm,data\01_source\MSFT\filings\0001193125-26-027207.txt
-0001193125-25-256321,2025-10-29,10-Q,2025-09-30,https://www.sec.gov/Archives/edgar/data/789019/000119312525256321/msft-20250930.htm,data\01_source\MSFT\filings\0001193125-25-256321.txt
-0000950170-25-061046,2025-04-30,10-Q,2025-03-31,https://www.sec.gov/Archives/edgar/data/789019/000095017025061046/msft-20250331.htm,data\01_source\MSFT\filings\0000950170-25-061046.txt
-0000950170-25-010491,2025-01-29,10-Q,2024-12-31,https://www.sec.gov/Archives/edgar/data/789019/000095017025010491/msft-20241231.htm,data\01_source\MSFT\filings\0000950170-25-010491.txt
-0000950170-24-118967,2024-10-30,10-Q,2024-09-30,https://www.sec.gov/Archives/edgar/data/789019/000095017024118967/msft-20240930.htm,data\01_source\MSFT\filings\0000950170-24-118967.txt
