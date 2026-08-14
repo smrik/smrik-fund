@@ -1,216 +1,243 @@
 # AGENTS.md
 
-## Project
+## Project goal
 
-AI Fund V1 is a lean financial-analysis pipeline for Microsoft (`MSFT`).
+Build the smallest working V1 of the AI financial-analysis pipeline.
 
-The goal is to test whether LLMs can use financial statements and filing disclosures to propose useful analytical adjustments, while Python handles accounting mechanics deterministically.
+The current target is MSFT.
 
 Core principle:
 
 > Open financial reasoning. Closed accounting mechanics.
 
-V1 is complete when one MSFT path works correctly end to end.
+Use LLMs for financial judgment.
+Use Python for deterministic accounting, validation, and calculations.
 
 ## Source of truth
 
-Before making changes, read the relevant parts of:
+Read the relevant parts of:
 
-* `docs/ai_fund_v1_section_1.md` — product scope and architecture
-* `docs/ai_fund_v1_section_2.md` — implementation flow, schemas, tests, and task order
+- `docs/ai_fund_v1_section_1.md` — product and architecture
+- `docs/ai_fund_v1_section_2.md` — implementation requirements
 
-Do not reinterpret or expand the approved V1 scope.
+Use the current repository to understand existing paths, interfaces, and code.
 
-If the documents appear to conflict:
+Do not redesign the project unless the requested task requires it.
 
-* Section 1 controls product scope and architecture principles.
-* Section 2 controls detailed implementation behavior.
+## Finance correctness
 
-## Scope
+Financial correctness is more important than software elegance.
 
-Implement only the requested task.
+Always preserve:
 
-Make normal in-scope technical decisions yourself.
+- reported source values;
+- reported signs;
+- missing values;
+- source periods;
+- useful source metadata;
+- reported vs adjusted separation.
 
 Do not:
 
-* add unrelated refactors;
-* implement later tasks early;
-* add abstractions for hypothetical future requirements;
-* broaden support beyond MSFT unless explicitly requested;
-* migrate old code or directories wholesale;
-* perform "while I am here" cleanup.
+- convert missing values to zero;
+- silently normalize signs;
+- invent periods;
+- invent mappings;
+- silently select ambiguous source facts;
+- create balancing plugs;
+- modify reported values to make calculations reconcile.
 
-If the task cannot be completed without a materially larger change, stop and explain the concrete blocker.
+If a financial relationship is ambiguous, preserve the ambiguity and report it.
 
-For a task expected to be small, touching more than roughly 5–8 files is a warning sign. Explain why before expanding further.
+Use accounting terminology precisely.
+For example, Gross Profit is a monetary subtotal; Gross Margin is a percentage.
 
-## Code style
+## Implementation style
 
-Prefer simple, explicit Python.
+Prefer:
 
-Use:
+- simple functions;
+- Pandas DataFrames;
+- explicit calculations;
+- direct control flow;
+- local code that is easy to inspect.
 
-* functions;
-* Pandas DataFrames;
-* dictionaries, lists, strings, and numbers;
-* Pydantic only at structured external boundaries such as LLM outputs;
-* descriptive names;
-* short technical comments and docstrings;
-* `# region` / `# endregion` when they improve navigation.
+Use Pydantic only at structured external boundaries such as LLM outputs.
 
-Prefer visible control flow over abstraction.
+Avoid unless the current task clearly requires them:
 
-The code should be understandable by a finance-oriented Python user.
+- classes;
+- services;
+- repositories;
+- controllers;
+- managers;
+- base classes;
+- interfaces;
+- provider hierarchies;
+- generic rule engines;
+- workflow frameworks;
+- dependency injection;
+- generic `utils` or `helpers` modules.
 
-Do not add classes unless the current task clearly becomes simpler with one.
+A little local duplication is preferable to a premature abstraction.
 
-Do not create architecture based on:
+Do not generalize code for hypothetical future companies or features.
 
-* services;
-* repositories;
-* controllers;
-* managers;
-* provider hierarchies;
-* base classes;
-* interfaces;
-* generic object models.
+Code should be proportionate to the financial problem.
 
-Do not create generic `utils`, `helpers`, or `common` modules without a concrete need.
+## Scope discipline
 
-## V1 architecture constraints
+The task acceptance criteria define the scope.
 
-Use the existing V1 stack where applicable:
+Implement only what is required to satisfy them.
 
-* Python 3.12
-* Pandas
-* Pydantic
-* Typer
-* Rich
-* EdgarTools
-* official OpenAI Python SDK
-* pytest
-* Ruff
-* Pyright
-* uv
+Do not fix unrelated problems discovered while working.
 
-Do not add these unless the approved task explicitly requires them:
+This includes unrelated:
 
-* LangChain;
-* generic agent frameworks;
-* RAG frameworks;
-* vector databases;
-* workflow engines;
-* ORMs;
-* dependency-injection frameworks;
-* event buses;
-* generic multi-provider abstractions;
-* autonomous multi-agent orchestration.
+- failing tests;
+- typing errors;
+- lint issues;
+- CLI problems;
+- path inconsistencies;
+- legacy code;
+- architecture problems.
 
-If EdgarTools already provides a capability, prefer using it over rebuilding it.
+If an unrelated issue does not prevent the requested behavior from working:
 
-## Data principles
+> Report it. Do not fix it.
 
-Preserve source data.
+Do not perform "while I am here" refactoring or cleanup.
 
-Do not mutate EdgarTools source values to make downstream analysis easier.
+Do not implement later tasks early.
 
-Keep reported data, adjustments, and adjusted data separate.
+If a small task starts requiring:
 
-Use simple inspectable formats:
+- more than about 4 changed production/test files; or
+- more than about 200 new production lines,
 
-* CSV for financial and adjustment tables;
-* JSON for structured LLM outputs;
-* Markdown for evidence packets and prompts.
+treat this as a scope warning.
 
-Do not introduce a database for V1.
+Before expanding further, determine whether the extra code is genuinely required by the acceptance criteria.
+
+Prefer removing complexity over adding abstractions.
+
+## Existing code
+
+Existing code has no presumption of survival.
+
+Before reusing an existing abstraction, confirm that it belongs to the current
+V1 architecture.
+
+Legacy compatibility is not a requirement.
+
+Delete obsolete code rather than adapting new work around it.
+
+## EdgarTools and data
+
+Use EdgarTools directly where it already provides the required capability.
+
+Do not recreate:
+
+- SEC ingestion;
+- XBRL parsing;
+- statement hierarchy;
+- raw filing caching;
+- source metadata handling.
+
+Use standard EdgarTools statement DataFrames as the primary financial-statement source unless a task explicitly requires raw facts.
+
+Existing code has no presumption of survival.
+
+Before reusing an existing abstraction, confirm that it belongs to the current
+V1 architecture.
+
+Legacy compatibility is not a requirement.
+
+Delete obsolete code rather than adapting new work around it.
+
+Do not build a canonical taxonomy or semantic mapping system unless a real case requires it.
 
 ## Testing
 
-Start from the task acceptance criteria.
+Testing should prove the financial behavior required by the task.
 
 When practical:
 
-1. write or update a focused failing test;
-2. run it and confirm the expected failure;
-3. implement the minimum required code;
-4. run the focused test;
-5. run the relevant broader checks.
+1. write a focused test for the required behavior;
+2. implement the smallest code needed;
+3. run the focused tests;
+4. run the relevant real MSFT path;
+5. inspect the final diff.
 
-Protect financial and data-integrity invariants, not arbitrary code coverage.
+Do not write tests for speculative future behavior.
 
-Normal pytest tests must not make live LLM calls.
+Repository-wide checks are diagnostic unless the task explicitly requires them to be clean.
 
-LLM evaluations must run separately and explicitly.
+If full pytest, Pyright, or another repository-wide check reports a pre-existing unrelated failure:
 
-Do not create verifier agents or repeat successful checks without a concrete reason.
+- confirm it is unrelated when practical;
+- report it;
+- do not fix it.
 
-## Git and safety
+Do not modify production code merely to satisfy unrelated static-typing warnings.
 
-You may without asking:
+## Validation
 
-* read project files;
-* inspect Git status and diffs;
-* edit files required by the current task;
-* run non-destructive tests, lint, type checks, and local CLI commands.
+Before claiming completion:
 
-Do not without explicit approval:
+- run the focused tests;
+- run Ruff on changed code;
+- run the relevant real-data path when applicable;
+- inspect `git diff --stat`;
+- inspect the relevant diff.
 
-* perform destructive Git operations;
-* rewrite unrelated history;
-* deploy anything;
-* make external writes unrelated to the requested task;
-* expand project scope materially.
+Use full pytest as an additional regression check when practical.
 
-Do not modify unrelated user changes.
+Do not repeatedly rerun successful checks without a concrete reason.
 
-Do not commit unless the task explicitly asks you to commit.
+## External skills and agent workflows
 
-## Subagents
+Do not invoke external development methodologies, planning systems, verifier agents,
+subagents, or workflow skills unless the user explicitly requests them or the task
+clearly cannot be completed without them.
 
-Do not use subagents for small tasks or verification.
+Normal implementation tasks should use this repository's instructions directly.
 
-Use subagents only when there are genuinely independent, sizeable workstreams that can proceed without shared state.
+Do not maintain separate agent session-state files unless explicitly requested.
 
-Prefer one agent completing one bounded task.
+## When something unexpected appears
 
-## Working behavior
+Ask:
 
-Read enough of the repository to understand the task before editing.
+> Does this prevent the requested task from working correctly?
 
-Do not spend time designing future architecture that the current task does not need.
+If no:
 
-Do not optimize for file count, abstraction, extensibility, or theoretical elegance.
+- leave it alone;
+- mention it in `Findings`.
 
-Optimize for:
+If yes:
 
-1. correctness;
-2. financial transparency;
-3. simple implementation;
-4. testability;
-5. inspectability.
+- make the smallest necessary fix;
+- do not broaden the fix into a general refactor.
 
-If you discover an unrelated issue, report it. Do not fix it unless it blocks the requested task.
+## Completion report
 
-## Completion
-
-Do not claim a task is complete based only on code inspection.
-
-Run the relevant executable checks.
-
-End with this format:
+Keep the final report short.
 
 ### Changed
 
-* What changed.
+What behavior was added or changed.
 
 ### Tests
 
-* Exact commands run.
-* Exact results.
+Exact relevant checks and results.
+
+### Findings
+
+Only concrete findings that matter for later work.
 
 ### Not changed
 
-* Relevant nearby work intentionally left out of scope.
-
-Keep the report concise.
+Relevant nearby work deliberately left out of scope.
