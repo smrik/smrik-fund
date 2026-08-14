@@ -1,11 +1,11 @@
 # Session State
 
-**Updated:** 2026-08-14 11:01:29 +02:00
+**Updated:** 2026-08-14 11:25:43 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\finance\smrik-fund
 
 ## Current Task
-Complete the canonical generated-data layout and Git hygiene cleanup after Section 2 Task 2.
+Task 2 is complete and published in draft PR #2.
 
 ## Recent Actions
 - Added `.gitattributes` rules that keep tracked agent-state files opaque in diffs.
@@ -14,9 +14,10 @@ Complete the canonical generated-data layout and Git hygiene cleanup after Secti
 - Updated ingestion, packet, statement-output, test, README, and implementation-spec paths to the canonical layout.
 - Removed old generated data paths from the Git index without deleting the migrated local files.
 - Ran the real MSFT analytical path and wrote `data/MSFT/03_output/analytical_pnl.csv`.
+- Committed as `2b56aa1`, pushed `feat/inspect-edgartools-msft`, and opened draft PR https://github.com/smrik/smrik-fund/pull/2.
 
 ## Next Steps
-- Review the working-tree diff and commit the intended cleanup when ready.
+- Review CI and merge draft PR #2 when ready.
 - Keep reconciliation, adjustment, evidence, and LLM work outside Task 2.
 
 ## Known Issues
