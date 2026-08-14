@@ -86,9 +86,9 @@ def _note_mentions_key(
 def write_packets_artifacts(
     ticker: str,
     *,
-    ingestion_root: str | Path = "data/ingestion",
+    ingestion_root: str | Path = "data",
     filing_accession: str = "0000950170-25-100235",
-    output_subdir: str = "05_packets",
+    output_subdir: str = "packets",
 ) -> PacketsResult:
     """Build evidence packets that bundle CIQ and EDGAR without choosing between them."""
     normalized_ticker = ticker.strip().upper()
@@ -97,9 +97,15 @@ def write_packets_artifacts(
 
     root = Path(ingestion_root)
     ticker_dir = root / normalized_ticker
-    reconciliation_path = ticker_dir / "03_final_datapack" / "reconciliation.csv"
-    financial_facts_path = ticker_dir / "03_final_datapack" / "financial_facts.csv"
-    filing_path = ticker_dir / "01_2_edgar" / "filings" / f"{filing_accession}.txt"
+    reconciliation_path = ticker_dir / "03_output" / "reconciliation_checks.csv"
+    financial_facts_path = ticker_dir / "02_processing" / "financial_facts.csv"
+    filing_path = (
+        ticker_dir
+        / "01_source"
+        / "edgar"
+        / "filings"
+        / f"{filing_accession}.txt"
+    )
 
     if not reconciliation_path.exists():
         raise FileNotFoundError(f"reconciliation.csv not found: {reconciliation_path}")
@@ -175,7 +181,7 @@ def write_packets_artifacts(
                     f"conflicting comparison for {period_end}: existing ciq={existing.get('ciq_base_value')} xbrl={existing.get('xbrl_base_value')} vs additional ciq={row.get('ciq_base_value')} xbrl={row.get('xbrl_base_value')} (fact_ids {existing.get('ciq_fact_id')}/{row.get('ciq_fact_id')})"
                 )
 
-    output_dir = ticker_dir / output_subdir
+    output_dir = ticker_dir / "03_output" / output_subdir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     index_entries: list[dict[str, Any]] = []
@@ -437,7 +443,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Build evidence packets for a ticker")
     parser.add_argument("--ticker", default="MSFT")
-    parser.add_argument("--ingestion-root", default="data/ingestion")
+    parser.add_argument("--ingestion-root", default="data")
     parser.add_argument("--filing-accession", default="0000950170-25-100235")
     args = parser.parse_args()
     write_packets_artifacts(

@@ -58,12 +58,12 @@ def import_edgar_filings(
     *,
     years: int = DEFAULT_YEARS,
     forms: Iterable[str] = DEFAULT_FORMS,
-    output_root: str | Path = "data/01_source",
+    output_root: str | Path = "data",
     refresh: bool = False,
 ) -> EdgarImportResult:
     """Download the last ``years`` of ``forms`` filings for ``ticker`` into ``output_root``.
 
-    Artifacts written under ``output_root/<TICKER>/``:
+    Artifacts written under ``output_root/<TICKER>/01_source/edgar/``:
       - ``filings/<accession>.txt``   primary document text per filing
       - ``filing_index.csv``          accession, filing_date, form_type, source_url, output_path
       - ``manifest.json``             run metadata, per-filing rows, and non-fatal errors
@@ -79,8 +79,9 @@ def import_edgar_filings(
     company = Company(normalized_ticker)
     cik = str(company.cik).zfill(10)
 
-    destination = Path(output_root) / normalized_ticker
-    (destination / SOURCE_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    ticker_dir = Path(output_root) / normalized_ticker
+    source_dir = ticker_dir / "01_source" / "edgar"
+    (source_dir / SOURCE_DIR_NAME).mkdir(parents=True, exist_ok=True)
 
     cutoff = (datetime.now(UTC).date() - timedelta(days=years * 365)).isoformat()
     rows: list[FilingRow] = []
@@ -105,13 +106,13 @@ def import_edgar_filings(
                 continue
             seen_accessions.add(accession)
             try:
-                rows.append(_download_filing(filing, destination, refresh=refresh))
+                rows.append(_download_filing(filing, source_dir, refresh=refresh))
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{form} {accession}: download failed: {exc}")
 
-    _write_index(destination, rows)
+    _write_index(source_dir, rows)
     _write_manifest(
-        destination,
+        source_dir,
         {
             "status": "completed",
             "ticker": normalized_ticker,
@@ -129,7 +130,7 @@ def import_edgar_filings(
     return EdgarImportResult(
         ticker=normalized_ticker,
         cik=cik,
-        output_dir=destination,
+        output_dir=ticker_dir,
         filings=rows,
         errors=errors,
     )

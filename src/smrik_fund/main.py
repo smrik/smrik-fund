@@ -1,8 +1,10 @@
 import typer
 
+from .ingestion.artifacts import save_statement_artifacts
+from .ingestion.parser import parse_statement_artifacts
 from .ingestion.statements import (
-    parse_statements,
-    save_statements,
+    build_analytical_pnl,
+    save_analytical_pnl,
 )
 
 app = typer.Typer(
@@ -19,10 +21,24 @@ def parse(ticker: str) -> None:
     Fetch the latest financial statements
     """
 
-    statements = parse_statements(ticker)
-    output_dir = save_statements(ticker, statements)
+    artifacts = parse_statement_artifacts(ticker)
+    output_dir = save_statement_artifacts(artifacts)
 
-    typer.echo(f"Saved statements to {output_dir}")
+    typer.echo(f"Saved: {output_dir}")
+    typer.echo(f"facts: {len(artifacts.facts)} rows")
+    for name, frame in artifacts.statements.items():
+        typer.echo(f"{name}: {len(frame)} rows x {len(frame.columns)} columns")
+
+
+@app.command()
+def analyze(
+    ticker: str,
+    years: int = typer.Option(default=3, help="Number of annual periods to include."),
+) -> None:
+    """Build and save the derived analytical P&L."""
+    pnl = build_analytical_pnl(ticker, years=years)
+    output_path = save_analytical_pnl(ticker, pnl)
+    typer.echo(f"Saved analytical P&L: {output_path}")
 
 
 # endregion

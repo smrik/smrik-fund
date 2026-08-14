@@ -1251,10 +1251,10 @@ Use the simplest format that preserves the required information.
 
 ## 41. Canonical files
 
-Target processed outputs include:
+Target output files include:
 
 ```text
-data/MSFT/processed/
+data/MSFT/03_output/
     analytical_pnl.csv
     adjusted_pnl.csv
     adjustment_history.csv
@@ -2385,4 +2385,3 @@ Relevant principles used here:
 
 These model capabilities support the lean architecture.
 They do not justify adding more orchestration to V1.
-

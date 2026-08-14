@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# Generated and rerunnable research data
+data/
+
 # Virtual environments
 .venv
 

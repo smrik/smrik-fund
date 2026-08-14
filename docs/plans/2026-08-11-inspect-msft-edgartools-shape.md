@@ -76,7 +76,7 @@ Expected: syntax compilation succeeds and Ruff reports no violations.
 
 **Files:**
 - Create: `docs/edgartools_msft_shape.md`
-- Read only: `data/ingestion/MSFT/` may be used as evidence of the cached filing, but do not rewrite generated artifacts
+- Read only: `data/MSFT/01_source/edgar/` may be used as evidence of the cached filing, but do not rewrite generated artifacts
 
 **Step 1: Run the inspection against the latest real 10-K**
 
