@@ -9,14 +9,16 @@ smrik-fund parse MSFT
 The command writes machine-readable files:
 
 ```text
-data/ingestion/MSFT/
-  01_2_edgar/
+data/MSFT/
+  01_source/edgar/
     filing_index.csv
     manifest.json
     filings/<accession>.txt
-  02_preprocessing/edgar/
+  02_processing/edgar/
     facts.csv
     coverage.json
+  03_output/
+    analytical_pnl.csv
 ```
 
 `facts.csv` has one row per numeric XBRL fact. It keeps both the original

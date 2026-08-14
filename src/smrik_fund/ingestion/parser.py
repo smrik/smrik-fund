@@ -12,7 +12,7 @@ from pandas import DataFrame
 
 from .facts import FACT_COLUMNS, STATEMENT_NAMES, STATEMENT_TYPES, normalize_facts
 
-DEFAULT_OUTPUT_ROOT = Path("data/ingestion")
+DEFAULT_OUTPUT_ROOT = Path("data")
 DEFAULT_USER_AGENT = "SmrikFund research@example.com"
 PARSER_VERSION = "edgartools-standard-10k-v1"
 

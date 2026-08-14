@@ -1,0 +1,54 @@
+Implement Task 1 from `docs/ai_fund_v1_section_2.md`.
+
+Read first:
+
+* `AGENTS.md`
+* `docs/ai_fund_v1_section_1.md`
+* `docs/ai_fund_v1_section_2.md`, especially Task 1
+
+Task:
+Inspect and lock the actual EdgarTools output shape for MSFT.
+
+Goal:
+Confirm the real MSFT statement structure before we design any transformation or mapping logic.
+
+Inspect:
+
+* income statement
+* balance sheet
+* cash flow statement
+* DataFrame columns and index
+* three available annual periods
+* source/XBRL metadata
+* reported value signs
+* subtotal / hierarchy information available from EdgarTools
+* obvious duplicate or dimensional facts, if present
+
+Deliverable:
+Create only the smallest inspection script or focused test needed to inspect this reliably.
+
+Also write a short Markdown note with the observed MSFT output shape and any important findings that affect Task 2.
+
+Constraints:
+
+* Do not implement Task 2.
+* Do not build the analytical P&L.
+* Do not create a mapping system.
+* Do not create abstractions for hypothetical companies.
+* Do not refactor unrelated code.
+* Prefer direct EdgarTools calls and simple Python.
+* Reuse existing project setup where appropriate.
+* If EdgarTools already solves a problem, use it rather than recreating it.
+* Do not expand scope because another improvement seems useful.
+
+Validation:
+Run the inspection against real MSFT data.
+Run relevant existing tests and Ruff if available.
+
+Stop when Task 1 is complete.
+
+Completion report:
+Changed: files and behavior changed.
+Tests: exact commands run and results.
+Findings: actual EdgarTools/MSFT data shape relevant to Task 2.
+Not changed: nearby work deliberately left for later tasks.

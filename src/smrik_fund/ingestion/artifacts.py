@@ -22,8 +22,8 @@ def save_statement_artifacts(
 ) -> Path:
     """Write source filing, normalized facts, manifest, and coverage files."""
     output_dir = Path(output_root) / artifacts.ticker
-    source_dir = output_dir / "01_2_edgar"
-    edgar_dir = output_dir / "02_preprocessing" / "edgar"
+    source_dir = output_dir / "01_source" / "edgar"
+    edgar_dir = output_dir / "02_processing" / "edgar"
     filing_dir = source_dir / "filings"
     filing_dir.mkdir(parents=True, exist_ok=True)
     edgar_dir.mkdir(parents=True, exist_ok=True)

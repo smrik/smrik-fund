@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from typer.testing import CliRunner
 
+from smrik_fund.ingestion.edgar_import import FilingRow, import_edgar_filings
 from smrik_fund.ingestion.statements import (
     FilingMetadata,
     StatementArtifacts,
@@ -238,8 +239,8 @@ class SaveStatementArtifactsTests(TestCase):
 
             expected_dir = Path(temporary_directory) / "MSFT"
             self.assertEqual(output_dir, expected_dir)
-            source_dir = expected_dir / "01_2_edgar"
-            edgar_dir = expected_dir / "02_preprocessing" / "edgar"
+            source_dir = expected_dir / "01_source" / "edgar"
+            edgar_dir = expected_dir / "02_processing" / "edgar"
             index_path = source_dir / "filing_index.csv"
             manifest_path = source_dir / "manifest.json"
             filing_path = source_dir / "filings" / "0000000000-24-000001.txt"
@@ -289,11 +290,61 @@ class SaveStatementArtifactsTests(TestCase):
             self.assertEqual(coverage["by_statement"]["balance_sheet"], 1)
 
 
+class EdgarImportLayoutTests(TestCase):
+    def test_edgar_import_uses_ticker_source_stage(self) -> None:
+        company = Mock()
+        company.cik = "789019"
+        filing = Mock(
+            form="10-K",
+            accession_number="0000000000-26-000001",
+            filing_date="2026-07-29",
+            period_of_report="2026-06-30",
+            filing_url="https://www.sec.gov/Archives/example.txt",
+        )
+        company.get_filings.return_value = [filing]
+        expected_row = FilingRow(
+            accession="0000000000-26-000001",
+            filing_date="2026-07-29",
+            form_type="10-K",
+            period_of_report="2026-06-30",
+            source_url="https://www.sec.gov/Archives/example.txt",
+            output_path="filings/0000000000-26-000001.txt",
+        )
+
+        with TemporaryDirectory() as temporary_directory:
+            with (
+                patch(
+                    "smrik_fund.ingestion.edgar_import.Company",
+                    return_value=company,
+                ),
+                patch(
+                    "smrik_fund.ingestion.edgar_import._download_filing",
+                    return_value=expected_row,
+                ) as download_filing,
+            ):
+                result = import_edgar_filings(
+                    " msft ",
+                    forms=("10-K",),
+                    output_root=temporary_directory,
+                )
+
+            expected_root = Path(temporary_directory) / "MSFT"
+            expected_source = expected_root / "01_source" / "edgar"
+            self.assertEqual(result.output_dir, expected_root)
+            download_filing.assert_called_once_with(
+                filing,
+                expected_source,
+                refresh=False,
+            )
+            self.assertTrue((expected_source / "filing_index.csv").is_file())
+            self.assertTrue((expected_source / "manifest.json").is_file())
+
+
 class ParseCommandTests(TestCase):
     def test_parse_command_prints_artifact_path_and_dimensions(self) -> None:
         runner = CliRunner()
         artifacts = make_artifacts()
-        output_dir = Path("data/ingestion/MSFT")
+        output_dir = Path("data/MSFT")
 
         with (
             patch("smrik_fund.main.parse_statement_artifacts", return_value=artifacts),
@@ -302,7 +353,7 @@ class ParseCommandTests(TestCase):
             result = runner.invoke(app, ["parse", "MSFT"])
 
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("Saved: data\\ingestion\\MSFT", result.output)
+        self.assertIn("Saved: data\\MSFT", result.output)
         self.assertIn("facts: 3 rows", result.output)
         for name in STATEMENT_NAMES:
             self.assertIn(f"{name}: 1 rows x 4 columns", result.output)
