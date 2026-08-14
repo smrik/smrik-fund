@@ -1,7 +1,5 @@
 """Public interfaces for standard statements and the derived MSFT P&L."""
 
-from __future__ import annotations
-
 import os
 import re
 from pathlib import Path
@@ -10,19 +8,9 @@ import pandas as pd
 from dotenv import load_dotenv
 from edgar import Company, set_identity
 
-from .artifacts import save_statement_artifacts
-from .parser import (
-    DEFAULT_USER_AGENT,
-    FilingMetadata,
-    StatementArtifacts,
-    parse_statement_artifacts,
-)
-from .parser import (
-    parse_statements as _parse_standard_statements,
-)
-
 load_dotenv()
 
+DEFAULT_USER_AGENT = "SmrikFund research@example.com"
 ANNUAL_PERIOD_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2} \(FY\)$")
 SHARE_CONCEPTS = {"SharesAverage", "SharesFullyDilutedAverage"}
 
@@ -38,30 +26,24 @@ def configure_edgar() -> None:
 
 def get_statements(ticker: str) -> dict[str, pd.DataFrame]:
     """Return the latest 10-K statements in EdgarTools' standard view."""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise ValueError("ticker is required")
+
     load_dotenv()
-    return _parse_standard_statements(ticker)
-
-
-def parse_statements(
-    ticker: str,
-    form: str = "10-K",
-    view: str = "standard",
-) -> dict[str, pd.DataFrame]:
-    """Keep the older statement-parser name as a compatibility wrapper."""
-    if form == "10-K" and view == "standard":
-        return get_statements(ticker)
-
     configure_edgar()
-    company = Company(ticker.strip().upper())
-    filing = company.get_filings(form=form).latest()
+    company = Company(ticker)
+    filing = company.get_filings(form="10-K").latest()
     xbrl = filing.xbrl()
     return {
         "income_statement": xbrl.statements.income_statement().to_dataframe(
-            view=view
+            view="standard"
         ),
-        "balance_sheet": xbrl.statements.balance_sheet().to_dataframe(view=view),
+        "balance_sheet": xbrl.statements.balance_sheet().to_dataframe(
+            view="standard"
+        ),
         "cash_flow_statement": xbrl.statements.cashflow_statement().to_dataframe(
-            view=view
+            view="standard"
         ),
     }
 
@@ -74,26 +56,15 @@ def _annual_period_columns(income_statement: pd.DataFrame) -> list[str]:
     ]
 
 
-def _standard_concept_mask(
-    frame: pd.DataFrame,
-    standard_concept: str,
-) -> pd.Series:
-    concepts = frame["standard_concept"].astype("string")
-    return concepts.eq(standard_concept).fillna(False)
-
-
 def _unique_standard_concept_index(
     frame: pd.DataFrame,
     standard_concept: str,
 ) -> int | None:
-    matches = frame.index[_standard_concept_mask(frame, standard_concept)]
+    concepts = frame["standard_concept"].astype("string")
+    matches = frame.index[concepts.eq(standard_concept).fillna(False)]
     if len(matches) != 1:
         return None
     return matches[0]
-
-
-def _numeric_values(frame: pd.DataFrame, period: str) -> pd.Series:
-    return pd.to_numeric(frame[period], errors="coerce")
 
 
 def _safe_change(current: pd.Series, previous: pd.Series) -> pd.Series:
@@ -105,31 +76,6 @@ def _safe_ratio(numerator: pd.Series, denominator: float) -> pd.Series:
     if pd.isna(denominator) or denominator == 0:
         return pd.Series(float("nan"), index=numerator.index)
     return numerator.div(denominator).mask(numerator.isna())
-
-
-def _single_line_metric(
-    frame: pd.DataFrame,
-    period: str,
-    numerator_concept: str,
-    denominator_concept: str,
-) -> pd.Series | None:
-    numerator_index = _unique_standard_concept_index(frame, numerator_concept)
-    denominator_index = _unique_standard_concept_index(frame, denominator_concept)
-    if numerator_index is None or denominator_index is None:
-        return None
-
-    values = pd.Series(float("nan"), index=frame.index)
-    denominator = pd.to_numeric(
-        pd.Series([frame.loc[denominator_index, period]]),
-        errors="coerce",
-    ).iloc[0]
-    numerator = pd.to_numeric(
-        pd.Series([frame.loc[numerator_index, period]]),
-        errors="coerce",
-    ).iloc[0]
-    ratio = numerator / denominator if pd.notna(denominator) and denominator != 0 else float("nan")
-    values.loc[numerator_index] = ratio
-    return values
 
 
 def prepare_pnl(
@@ -159,9 +105,12 @@ def prepare_pnl(
     pnl = income_statement.loc[:, source_columns].copy(deep=True)
 
     for position, period in enumerate(selected_periods):
-        current = _numeric_values(pnl, period)
+        current = pd.to_numeric(pnl[period], errors="coerce")
         if position + 1 < len(selected_periods):
-            previous = _numeric_values(pnl, selected_periods[position + 1])
+            previous = pd.to_numeric(
+                pnl[selected_periods[position + 1]],
+                errors="coerce",
+            )
             pnl[f"yoy_change_{period}"] = _safe_change(current, previous)
         else:
             pnl[f"yoy_change_{period}"] = float("nan")
@@ -175,18 +124,39 @@ def prepare_pnl(
                 pd.Series([pnl.loc[revenue_index, period]]),
                 errors="coerce",
             ).iloc[0]
-            percent_of_revenue = _safe_ratio(_numeric_values(pnl, period), revenue)
+            percent_of_revenue = _safe_ratio(
+                pd.to_numeric(pnl[period], errors="coerce"),
+                revenue,
+            )
             pnl[f"percent_of_revenue_{period}"] = percent_of_revenue.where(eligible)
 
-    for metric, numerator, denominator in (
+    for metric, numerator_concept, denominator_concept in (
         ("gross_margin", "GrossProfit", "Revenue"),
         ("operating_margin", "OperatingIncomeLoss", "Revenue"),
         ("effective_tax_rate", "IncomeTaxes", "PretaxIncomeLoss"),
     ):
+        numerator_index = _unique_standard_concept_index(pnl, numerator_concept)
+        denominator_index = _unique_standard_concept_index(pnl, denominator_concept)
+        if numerator_index is None or denominator_index is None:
+            continue
+
         for period in selected_periods:
-            values = _single_line_metric(pnl, period, numerator, denominator)
-            if values is not None:
-                pnl[f"{metric}_{period}"] = values
+            denominator = pd.to_numeric(
+                pd.Series([pnl.loc[denominator_index, period]]),
+                errors="coerce",
+            ).iloc[0]
+            numerator = pd.to_numeric(
+                pd.Series([pnl.loc[numerator_index, period]]),
+                errors="coerce",
+            ).iloc[0]
+            ratio = (
+                numerator / denominator
+                if pd.notna(denominator) and denominator != 0
+                else float("nan")
+            )
+            values = pd.Series(float("nan"), index=pnl.index)
+            values.loc[numerator_index] = ratio
+            pnl[f"{metric}_{period}"] = values
 
     return pnl
 
@@ -195,6 +165,22 @@ def build_analytical_pnl(ticker: str, years: int = 3) -> pd.DataFrame:
     """Load standard statements and prepare the income-statement view."""
     statements = get_statements(ticker)
     return prepare_pnl(statements["income_statement"], years=years)
+
+
+def load_analytical_pnl(
+    ticker: str,
+    output_root: str | Path = "data",
+) -> pd.DataFrame:
+    """Load the derived P&L saved by Task 2."""
+    input_path = (
+        Path(output_root)
+        / ticker.strip().upper()
+        / "03_output"
+        / "analytical_pnl.csv"
+    )
+    if not input_path.is_file():
+        raise FileNotFoundError(f"Analytical P&L not found: {input_path}")
+    return pd.read_csv(input_path)
 
 
 def save_analytical_pnl(
@@ -213,36 +199,3 @@ def save_analytical_pnl(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pnl.to_csv(output_path, index=False)
     return output_path
-
-
-def save_statements(
-    ticker: str,
-    statements: dict[str, pd.DataFrame],
-) -> Path:
-    """Save source statement DataFrames as CSV files for compatibility."""
-    output_dir = (
-        Path("data")
-        / ticker.strip().upper()
-        / "02_processing"
-        / "edgar"
-        / "statements"
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for statement_name, dataframe in statements.items():
-        dataframe.to_csv(output_dir / f"{statement_name}.csv", index=False)
-    return output_dir
-
-
-__all__ = [
-    "FilingMetadata",
-    "StatementArtifacts",
-    "build_analytical_pnl",
-    "configure_edgar",
-    "get_statements",
-    "parse_statement_artifacts",
-    "parse_statements",
-    "prepare_pnl",
-    "save_analytical_pnl",
-    "save_statement_artifacts",
-    "save_statements",
-]
