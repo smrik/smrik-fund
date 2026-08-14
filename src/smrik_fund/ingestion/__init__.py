@@ -1,1 +1,1 @@
-"""Small, offline-first ingestion artifact pipeline."""
+"""EdgarTools statements, analytical P&L, and source reconciliation."""

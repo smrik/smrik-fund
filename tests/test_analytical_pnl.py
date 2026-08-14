@@ -40,7 +40,7 @@ def make_income_statement() -> pd.DataFrame:
             "label": [
                 "Revenue",
                 "Cost of revenue",
-                "Gross margin",
+                "Gross profit",
                 "Research and development",
                 "Operating income",
                 "Other income (expense), net",
@@ -104,7 +104,7 @@ class GetStatementsTests(TestCase):
         for name, method in methods.items():
             method.return_value.to_dataframe.return_value = frames[name]
 
-        with patch("smrik_fund.ingestion.parser.Company", return_value=company):
+        with patch("smrik_fund.ingestion.statements.Company", return_value=company):
             result = get_statements(" msft ")
 
         self.assertEqual(result, frames)
