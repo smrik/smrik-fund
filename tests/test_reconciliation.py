@@ -129,6 +129,89 @@ class ReconcilePnlTests(TestCase):
         self.assertTrue(pd.isna(gross_profit["difference"]))
         self.assertIn("missing", gross_profit["message"].lower())
 
+    def test_reconcile_pnl_respects_negative_other_income_sign(self) -> None:
+        checks = reconcile_pnl(make_analytical_pnl())
+
+        pretax = checks[
+            (checks["check_id"] == "pretax_income")
+            & (checks["period"] == PERIODS[1])
+        ].iloc[0]
+        self.assertEqual(pretax["reported_value"], 42.0)
+        self.assertEqual(pretax["calculated_value"], 42.0)
+        self.assertEqual(pretax["difference"], 0.0)
+        self.assertEqual(pretax["status"], "PASS")
+
+    def test_reconcile_pnl_tolerance_is_recorded_and_enforced(self) -> None:
+        source = make_analytical_pnl()
+        source.loc[source["standard_concept"] == "GrossProfit", PERIODS[0]] = 90.005
+
+        passing = reconcile_pnl(source, tolerance=0.01)
+        failing = reconcile_pnl(source, tolerance=0.001)
+
+        passing_gross_profit = passing[
+            (passing["check_id"] == "gross_profit")
+            & (passing["period"] == PERIODS[0])
+        ].iloc[0]
+        failing_gross_profit = failing[
+            (failing["check_id"] == "gross_profit")
+            & (failing["period"] == PERIODS[0])
+        ].iloc[0]
+        self.assertEqual(passing_gross_profit["status"], "PASS")
+        self.assertEqual(passing_gross_profit["tolerance"], 0.01)
+        self.assertEqual(failing_gross_profit["status"], "FAIL")
+
+    def test_reconcile_pnl_distinguishes_duplicate_standard_concepts(self) -> None:
+        checks = reconcile_pnl(make_analytical_pnl())
+
+        operating = checks[checks["check_id"] == "operating_income"]
+        self.assertTrue((operating["status"] == "PASS").all())
+        self.assertIn("Sales and marketing", operating.iloc[0]["affected_lines"])
+        self.assertIn(
+            "General and administrative",
+            operating.iloc[0]["affected_lines"],
+        )
+
+    def test_reconcile_pnl_uses_statement_hierarchy_not_expense_labels(self) -> None:
+        source = make_analytical_pnl()
+        source["concept"] = source["standard_concept"].map(
+            lambda concept: (
+                f"us-gaap_{concept}" if pd.notna(concept) else None
+            )
+        )
+        source["parent_concept"] = None
+        source.loc[
+            source["standard_concept"].isin(
+                {
+                    "GrossProfit",
+                    "ResearchAndDevelopmentExpenses",
+                    "SellingGeneralAndAdminExpenses",
+                }
+            ),
+            "parent_concept",
+        ] = "us-gaap_OperatingIncomeLoss"
+        source["weight"] = 1.0
+        source.loc[
+            source["standard_concept"].isin(
+                {
+                    "ResearchAndDevelopmentExpenses",
+                    "SellingGeneralAndAdminExpenses",
+                }
+            ),
+            "weight",
+        ] = -1.0
+        source.loc[
+            source["standard_concept"] == "ResearchAndDevelopmentExpenses",
+            "label",
+        ] = "Engineering"
+        source.loc[
+            source["standard_concept"] == "SellingGeneralAndAdminExpenses",
+            "label",
+        ] = ["Go-to-market", "Corporate"]
+
+        checks = reconcile_pnl(source)
+        operating = checks[checks["check_id"] == "operating_income"]
+        self.assertTrue((operating["status"] == "PASS").all())
+
 
 class SaveReconciliationChecksTests(TestCase):
     def test_save_reconciliation_checks_writes_and_reads_csv(self) -> None:
@@ -168,6 +251,29 @@ class SaveReconciliationChecksTests(TestCase):
 
 
 class ReconcileCommandTests(TestCase):
+    def test_analyze_command_writes_pnl_and_reconciliation(self) -> None:
+        runner = CliRunner()
+        source = make_analytical_pnl()
+
+        with (
+            patch("smrik_fund.main.build_analytical_pnl", return_value=source),
+            patch(
+                "smrik_fund.main.save_analytical_pnl",
+                return_value=Path("data/MSFT/03_output/analytical_pnl.csv"),
+            ) as save_pnl,
+            patch(
+                "smrik_fund.main.save_reconciliation_checks",
+                return_value=Path("data/MSFT/03_output/reconciliation_checks.csv"),
+            ) as save_checks,
+        ):
+            result = runner.invoke(app, ["analyze", "MSFT"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        save_pnl.assert_called_once()
+        save_checks.assert_called_once()
+        self.assertIn("Saved analytical P&L", result.output)
+        self.assertIn("Saved reconciliation checks", result.output)
+
     def test_reconcile_command_prints_warning_for_failed_check(self) -> None:
         runner = CliRunner()
         source = make_analytical_pnl()

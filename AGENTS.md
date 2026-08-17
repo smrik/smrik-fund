@@ -13,6 +13,10 @@ Core principle:
 Use LLMs for financial judgment.
 Use Python for deterministic accounting, validation, and calculations.
 
+## Verbostity, style
+
+When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
+
 ## Source of truth
 
 Read the relevant parts of:
@@ -218,7 +222,6 @@ If no:
 - mention it in `Findings`.
 
 If yes:
-
 - make the smallest necessary fix;
 - do not broaden the fix into a general refactor.
 

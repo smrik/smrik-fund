@@ -9,7 +9,9 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "edgartools>=5.45.1",
+    "openai>=1.66.0",
     "pandas>=3.0.0",
+    "pydantic>=2.0.0",
     "python-dotenv>=1.2.2",
     "typer>=0.27.1",
 ]
@@ -26,5 +28,17 @@ dev = [
     "ruff>=0.16.1",
 ]
 
+[tool.ruff]
+line-length = 88
+indent-width = 4
+target-version = "py311"
+
 [tool.ruff.lint]
-extend-select = ["I"]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "tab"
+skip-magic-trailing-comma = false
+line-ending = "auto"
