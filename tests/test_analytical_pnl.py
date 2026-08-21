@@ -115,6 +115,32 @@ class GetStatementsTests(TestCase):
 
 
 class PreparePnlTests(TestCase):
+    def test_prepare_pnl_normalizes_bare_iso_annual_columns(self) -> None:
+        source = make_income_statement().rename(
+            columns={period: period.removesuffix(" (FY)") for period in PERIODS}
+        )
+        source_before = source.copy(deep=True)
+
+        pnl = prepare_pnl(source, years=3)
+
+        pd.testing.assert_frame_equal(source, source_before)
+        self.assertEqual(
+            [column for column in pnl.columns if column in PERIODS],
+            list(PERIODS[:3]),
+        )
+        revenue = pnl.loc[pnl["standard_concept"] == "Revenue"].iloc[0]
+        self.assertEqual(revenue[PERIODS[0]], 120.0)
+        self.assertEqual(revenue[PERIODS[1]], 100.0)
+        self.assertEqual(revenue[PERIODS[2]], 80.0)
+        negative = pnl.loc[
+            pnl["standard_concept"] == "NonoperatingIncomeExpense"
+        ].iloc[0]
+        self.assertEqual(negative[PERIODS[1]], -3.0)
+        missing = pnl.loc[
+            pnl["standard_concept"] == "ResearchAndDevelopmentExpenses"
+        ].iloc[0]
+        self.assertTrue(pd.isna(missing[PERIODS[0]]))
+
     def test_prepare_pnl_selects_periods_preserves_source_and_calculates_metrics(
         self,
     ) -> None:
@@ -213,7 +239,9 @@ class SavePnlTests(TestCase):
 
     def test_build_analytical_pnl_uses_income_statement_only(self) -> None:
         statements = {
-            "income_statement": make_income_statement(),
+            "income_statement": make_income_statement().rename(
+                columns={period: period.removesuffix(" (FY)") for period in PERIODS}
+            ),
             "balance_sheet": pd.DataFrame({"concept": ["Assets"]}),
             "cash_flow_statement": pd.DataFrame({"concept": ["Cash flow"]}),
         }
@@ -227,3 +255,4 @@ class SavePnlTests(TestCase):
         get_statements_mock.assert_called_once_with("MSFT")
         self.assertEqual(len(result), len(statements["income_statement"]))
         self.assertNotIn("Assets", result["label"].tolist())
+        self.assertIn(PERIODS[0], result.columns)

@@ -14,20 +14,27 @@ from pydantic import BaseModel, ConfigDict
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-PROMPT_VERSION = "analyst-v1"
-SCHEMA_VERSION = "analyst-result-v1"
+PROMPT_VERSION = "analyst-v2"
+SCHEMA_VERSION = "analyst-result-v2"
 
 ANALYST_PROMPT = """You are a financial analyst identifying normalization candidates.
-Use only the supplied P&L context and frozen evidence packet.
-All monetary amounts are absolute USD amounts. Use the V1 convention that an
+Use only the supplied P&L context and evidence packet.
+Adjustment amounts are absolute USD magnitudes. Use the V1 convention that an
 adjustment amount is the positive magnitude being removed. If the attributable
 amount is not supported by the supplied evidence, return adjustment_amount as
 null; do not invent or infer an unsupported amount.
+Preserve the signed P&L values in your reasoning. If the reported target line is
+negative, describe it as a loss and do not claim that subtracting a positive
+adjustment would increase normalized income; leave that treatment for human
+review under V1.
 The target_line and period must exactly match the supplied P&L values. Do not
 paraphrase, normalize, or substitute them.
 Return plausible candidates with the target line, period, amount basis, reason,
 evidence references, and uncertainty. Use the evidence IDs exactly as written
 in the packet (for example, E1 or E2).
+When the packet explicitly says that filing evidence has not yet been
+retrieved, return at most one short research_request and do not cite evidence
+IDs or invent an amount. A research request is a retrieval need, not a fact.
 """
 
 
@@ -52,6 +59,7 @@ class AnalystResult(BaseModel):
 	model_config = ConfigDict(extra="forbid")
 
 	candidates: list[AnalystCandidate]
+	research_request: str | None = None
 
 
 class AdjustmentAnalysisError(RuntimeError):
@@ -92,9 +100,7 @@ def run_analyst(
 
 	# The model receives the frozen packet and the reported analytical P&L only.
 	pnl_records = (
-		pnl.astype(object)
-		.where(pd.notna(pnl), None)
-		.to_dict(orient="records")
+		pnl.astype(object).where(pd.notna(pnl), None).to_dict(orient="records")
 	)
 	payload = {
 		"ticker": ticker.strip().upper(),
