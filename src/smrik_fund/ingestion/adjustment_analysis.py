@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -16,6 +17,19 @@ DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 PROMPT_VERSION = "analyst-v3"
 SCHEMA_VERSION = "analyst-result-v3"
+
+_ITEM_KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){0,5}$")
+_GENERIC_ITEM_KEYS = {"adjustment", "unusual-item", "impairment", "other-expense"}
+_ITEM_KEY_PADDING = {
+	"amount",
+	"event",
+	"item",
+	"line",
+	"rationale",
+	"reason",
+	"target",
+	"year",
+}
 
 ANALYST_PROMPT = """You are a financial analyst identifying normalization candidates.
 Use only the supplied P&L context and evidence packet.
@@ -38,12 +52,28 @@ Preserve the signed P&L values in your reasoning. The target_line and period
 must exactly match the supplied P&L values. Do not paraphrase, normalize, or
 substitute them.
 Return plausible candidates with the target line, period, amount basis, reason,
-evidence references, and uncertainty. Use the evidence IDs exactly as written
+item_key, evidence references, and uncertainty. ``item_key`` is a short,
+lowercase hyphen slug naming the specific subject and event (or null when the
+economic identity cannot be resolved). Use the evidence IDs exactly as written
 in the packet (for example, E1 or E2).
 When the packet explicitly says that filing evidence has not yet been
 retrieved, return at most one short research_request and do not cite evidence
 IDs or invent an amount. A research request is a retrieval need, not a fact.
 """
+
+
+def valid_item_key(value: object) -> bool:
+	"""Validate bounded item-key syntax without resolving economic synonyms."""
+	if not isinstance(value, str) or not _ITEM_KEY_PATTERN.fullmatch(value):
+		return False
+	if value in _GENERIC_ITEM_KEYS:
+		return False
+	tokens = value.split("-")
+	if any(token in _ITEM_KEY_PADDING for token in tokens):
+		return False
+	if any(any(character.isdigit() for character in token) for token in tokens):
+		return False
+	return all(1 <= len(token) <= 24 for token in tokens)
 
 
 class AnalystCandidate(BaseModel):
@@ -54,6 +84,7 @@ class AnalystCandidate(BaseModel):
 	# These fields mirror the small Task 7 schema. They are not approval fields.
 	target_line: str
 	sub_item: str | None = None
+	item_key: str | None = None
 	period: str
 	item_amount: float | None = None
 	item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None

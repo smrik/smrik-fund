@@ -392,7 +392,6 @@ A0001 v3
 Create a new version only when the actual state changes materially, such as:
 
 - amount changed;
-- period changed;
 - group changed;
 - status changed;
 - Analyst revised the proposal.
@@ -400,7 +399,37 @@ Create a new version only when the actual state changes materially, such as:
 Do not create a new version because a materiality check ran or metadata was recalculated.
 
 A refreshed LLM run must not overwrite a human-reviewed adjustment.
-If matching is uncertain, create a new adjustment ID and let duplicate-risk logic flag possible overlap.
+
+The identity version after `economic-adjustment-v1` is
+`economic-adjustment-v2` and contains only:
+
+```text
+company + fiscal_period + target_row_key + item_key
+```
+
+`target_row_key` reuses the deterministic unique analytical-P&L row selector.
+`item_key` is a lowercase hyphen slug of one to six short tokens naming the
+specific subject and event. Provenance, accession, evidence anchors, query,
+retrieval, prose, amount, and direction are observations, not identity.
+
+Matching is exact. The same key on the same company/period/row reuses the ID;
+the first valid key on an empty row-period may mint one ID; a different key on
+an occupied row-period is `identity_unresolved` and cannot allocate an ID,
+append history, auto-approve, or affect the P&L. A null or invalid key is also
+unresolved. Same keys on different periods or target rows are different IDs.
+Persisted snapshot fields must agree with the identity/state payload, and one
+economic identity cannot be assigned to multiple adjustment IDs; malformed
+rows fail closed.
+
+Pre-v2 `proposed` or `rejected` rows without identity fields are inert workflow
+evidence: they remain stored but neither apply nor block a new v2 identity.
+Approved/effective legacy rows with unknown identity, and any malformed row
+claiming a v2 identity, fail closed. No legacy row is migrated or rewritten.
+If an exact item key reappears with a changed target-row selector, identity is
+also unresolved rather than silently minting a second adjustment.
+For label-qualified duplicate concepts, any non-exact selector on an occupied
+concept-period is likewise unresolved: V1 cannot prove whether label drift or
+a genuinely different analytical row caused the change.
 
 ---
 
@@ -1159,23 +1188,12 @@ Status: **PENDING REAL CASE CALIBRATION**.
 
 ## 37. Duplicate risk is a flag, not an automatic merge
 
-Two proposals may describe the same underlying item.
-
-V1 may flag likely overlap using simple observable features such as:
-
-- same target line;
-- same period;
-- same or similar amount;
-- same evidence;
-- similar sub-item or reason.
-
-Store duplicate-risk metadata.
-
-Do not automatically merge or delete candidates.
-
-Possible duplicates require human review before both can be applied.
-
-Do not build a semantic deduplication framework in V1.
+Economic identity owns same-row matching. Amount, evidence, accession, sub-item,
+reason, and other overlap heuristics cannot decide whether two events are the
+same. A non-exact key on an occupied row-period is conservatively
+`identity_unresolved`; preserve the candidate and review artifacts without
+creating a second canonical history row. No semantic duplicate subsystem is
+needed in V1.
 
 ---
 
@@ -1306,7 +1324,7 @@ Examples:
 - source-reconciliation warnings;
 - human action;
 - evidence file;
-- filing accession;
+- filing accession (provenance only; never identity);
 - topic;
 - run ID.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest import TestCase
 
 import pandas as pd
@@ -76,11 +77,43 @@ def adjustment(
     status: str = "approved",
     origin: str = "llm",
 ) -> dict[str, object]:
+    concepts = {
+        "Cost of revenue": "CostOfGoodsAndServicesSold",
+        "Research and development": "ResearchAndDevelopmentExpenses",
+        "Sales and marketing": "SellingGeneralAndAdminExpenses",
+        "General and administrative": "SellingGeneralAndAdminExpenses",
+        "Other income (expense), net": "NonoperatingIncomeExpense",
+        "Provision for income taxes": "IncomeTaxes",
+    }
+    concept = concepts[target_line]
+    target_row_key = f"standard_concept:{concept}"
+    if concept == "SellingGeneralAndAdminExpenses":
+        target_row_key += f"|label:{target_line}"
+    item_key = {
+        "A0001": "fixture-charge-alpha",
+        "A0002": "fixture-charge-beta",
+    }[adjustment_id]
+    identity = {
+        "identity_version": "economic-adjustment-v2",
+        "company": "MSFT",
+        "fiscal_period": period,
+        "target_row_key": target_row_key,
+        "item_key": item_key,
+    }
+    state = {
+        "item_amount": item_amount,
+        "item_effect_on_line": item_effect_on_line,
+        "amount_basis": "disclosed",
+    }
     return {
         "adjustment_id": adjustment_id,
         "version": version,
         "run_id": f"run-{adjustment_id}-{version}",
         "origin": origin,
+        "identity_version": "economic-adjustment-v2",
+        "candidate_identity": json.dumps(identity, sort_keys=True, separators=(",", ":")),
+        "candidate_state": json.dumps(state, sort_keys=True, separators=(",", ":")),
+        "target_row_key": target_row_key,
         "target_line": target_line,
         "period": period,
         "item_amount": item_amount,
@@ -224,6 +257,20 @@ class ApplyAdjustmentsTests(TestCase):
 
         with self.assertRaisesRegex(ValueError, "fail closed"):
             apply_adjustments(make_pnl(), history)
+
+    def test_unique_concept_row_key_applies_after_label_drift(self) -> None:
+        source = make_pnl()
+        source.loc[source["standard_concept"] == "ResearchAndDevelopmentExpenses", "label"] = "Engineering"
+        history = pd.DataFrame(
+            [adjustment("A0001", 1, "Research and development", PERIODS[0], 10.0)]
+        )
+
+        adjusted = apply_adjustments(source, history)
+
+        engineering = adjusted.loc[
+            adjusted["standard_concept"] == "ResearchAndDevelopmentExpenses"
+        ].iloc[0]
+        self.assertEqual(engineering[PERIODS[0]], 90.0)
 
 
 class DeriveLineDeltaTests(TestCase):

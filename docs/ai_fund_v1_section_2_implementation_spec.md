@@ -627,6 +627,8 @@ It should:
 - propose zero, one, or several candidates;
 - target an actual reported P&L line;
 - use `sub_item` for useful detail below the reported line;
+- add `item_key` as a lowercase hyphen slug of one to six short tokens naming
+  the evidence-grounded subject and event, or null when unresolved;
 - identify the period;
 - propose an amount when supported;
 - state how the amount was obtained;
@@ -652,6 +654,7 @@ Conceptual schema:
 class AdjustmentCandidate(BaseModel):
     target_line: str
     sub_item: str | None = None
+    item_key: str | None = None
     period: str
     item_amount: float | None = None
     item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
@@ -915,7 +918,42 @@ A0001 v3
 A genuinely new adjustment receives a new ID.
 
 A refreshed LLM proposal should not overwrite a previously human-reviewed adjustment.
-When matching is uncertain, create a new adjustment ID and let duplicate detection flag overlap.
+
+The identity version after `economic-adjustment-v1` is
+`economic-adjustment-v2` and contains only:
+
+```text
+company + fiscal_period + target_row_key + item_key
+```
+
+`target_row_key` reuses the deterministic unique analytical-P&L row selector.
+`item_key` is a lowercase hyphen slug of one to six short tokens naming the
+specific subject and event. Accession, evidence anchors, query, retrieval,
+prose, amount, and direction are provenance/state observations, not identity.
+
+Matching is exact: same key and same company/period/row reuses the ID; the
+first valid key on an empty row-period may mint one; a different key on an
+occupied row-period, or a null/invalid key, is `identity_unresolved` with no ID,
+history append, auto-approval, or P&L effect. Same key on a different period or
+target row is a different identity. Legacy or corrupted history fails closed.
+Persisted period, row-selector, and state snapshot fields must agree with the
+identity payload; one identity assigned to multiple adjustment IDs is also
+corrupt and fails closed.
+
+The legacy rule distinguishes financial authority from inert workflow evidence:
+
+- pre-v2 `proposed` or `rejected` rows without identity fields remain stored but
+  are ignored for v2 matching and application;
+- approved/effective legacy rows with unresolved identity fail closed;
+- any row claiming v2 with malformed identity/state data fails closed.
+
+No migration or rewrite occurs. An exact item key with a changed target-row
+selector is `identity_unresolved`, preventing selector evolution from silently
+minting a second adjustment ID.
+For a label-qualified duplicate concept, any non-exact selector on an occupied
+concept-period is also unresolved, regardless of item-key spelling. Python
+cannot prove whether presentation drift or a genuinely separate analytical row
+caused that selector change.
 
 ### Version rule
 
@@ -924,7 +962,6 @@ Create a new version only when the adjustment state changes meaningfully.
 Examples:
 
 - amount changes;
-- period changes;
 - group changes;
 - status changes;
 - revised proposal changes content.
@@ -1265,33 +1302,11 @@ If the underlying affected line cannot be identified, require human review rathe
 
 ## 24. Duplicate-risk checks
 
-Do not auto-merge candidates.
-
-Flag possible duplicates using simple observable overlap such as:
-
-- same target line;
-- same period;
-- same or similar amount;
-- same evidence;
-- similar sub-item or reason.
-
-Store:
-
-```text
-possible_duplicate
-duplicate_group
-duplicate_reason
-```
-
-Possible duplicate:
-
-```text
--> cannot auto-approve both
--> require human review
-```
-
-Keep this simple.
-Do not build a semantic duplicate-detection subsystem in V1.
+Economic identity owns exact same-row matching. Amount, evidence, accession,
+sub-item, reason, and other overlap heuristics cannot decide identity; an
+occupied row-period with a competing key is `identity_unresolved`. Preserve
+candidate/evidence/review artifacts while leaving canonical history and current
+approved state untouched. No semantic duplicate subsystem is needed in V1.
 
 ---
 

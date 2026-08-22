@@ -13,13 +13,22 @@ from .ingestion.adjustment_analysis import (
 	DEFAULT_REASONING_EFFORT,
 	AdjustmentAnalysisError,
 	run_analyst,
+	valid_item_key,
 )
 from .ingestion.adjustments import (
 	ADJUSTMENT_SCHEMA_VERSION,
+	IDENTITY_VERSION,
+	_find_line_index,
 	_is_derived_line,
 	apply_adjustments,
 	derive_line_delta,
 	resolve_current_adjustments,
+)
+from .ingestion.adjustments import (
+	identity_components as _identity_components,
+)
+from .ingestion.adjustments import (
+	validated_history_identity_rows as _validated_history_identity_rows,
 )
 from .ingestion.discovery import (
 	DiscoveryError,
@@ -127,17 +136,6 @@ def _next_adjustment_id(history: pd.DataFrame, offset: int = 0) -> str:
 	return f"A{max(numbers, default=0) + offset + 1:04d}"
 
 
-def _source_line_indices(pnl: pd.DataFrame, target_line: object) -> list[object]:
-	"""Return unique exact source-line matches without guessing between rows."""
-	matches: list[object] = []
-	for column in ("label", "standard_concept"):
-		if column in pnl:
-			matches.extend(
-				pnl.index[pnl[column].eq(target_line).fillna(False)].tolist()
-			)
-	return list(dict.fromkeys(matches))
-
-
 def _reported_source_value(
 	pnl: pd.DataFrame,
 	target_line: object,
@@ -146,11 +144,12 @@ def _reported_source_value(
 	"""Return one exact signed reported value, or None when it is unavailable."""
 	if period not in pnl.columns:
 		return None
-	line_indices = _source_line_indices(pnl, target_line)
-	if len(line_indices) != 1:
+	try:
+		line_index = _find_line_index(pnl, target_line)
+	except (KeyError, ValueError):
 		return None
 	value = pd.to_numeric(
-		pd.Series([pnl.at[line_indices[0], period]]), errors="coerce"
+		pd.Series([pnl.at[line_index, period]]), errors="coerce"
 	).iloc[0]
 	if pd.isna(value):
 		return None
@@ -170,14 +169,89 @@ def _canonical_json(value: object) -> str:
 def _candidate_state(candidate: Any) -> dict[str, Any]:
 	amount = candidate.item_amount
 	return {
-		"target_line": candidate.target_line,
-		"period": candidate.period,
 		"item_amount": None if amount is None else float(amount),
 		"item_effect_on_line": candidate.item_effect_on_line,
 		"amount_basis": candidate.amount_basis,
-		"sub_item": candidate.sub_item or "",
-		"group_id": getattr(candidate, "group_id", None) or "",
 	}
+
+
+def _target_row_key(pnl: pd.DataFrame, target_line: object) -> str:
+	"""Return a deterministic selector for one non-derived source row.
+
+	A unique standard concept is stable across presentation-label drift. When a
+	concept occurs more than once, existing row metadata (normally the label)
+	keeps the duplicate rows distinct. A label is the last safe fallback when a
+	standard concept is unavailable.
+	"""
+	try:
+		line_index = _find_line_index(pnl, target_line)
+	except (KeyError, ValueError) as exc:
+		raise FilingEvidenceError(
+			"candidate target line is missing or ambiguous; row identity is unsafe"
+		) from exc
+	if _is_derived_line(pnl, line_index):
+		raise FilingEvidenceError("candidate target line is missing, ambiguous, or derived")
+
+	def text_value(value: object) -> str | None:
+		try:
+			if pd.isna(value):
+				return None
+		except (TypeError, ValueError):
+			pass
+		text = str(value).strip()
+		return text or None
+
+	def value_for_at(row: object, field: str) -> str | None:
+		if field not in pnl:
+			return None
+		return text_value(pnl.at[row, field])
+
+	def value_for(field: str) -> str | None:
+		return value_for_at(line_index, field)
+
+	def matches(field: str, value: str) -> list[object]:
+		if field not in pnl:
+			return []
+		return pnl.index[pnl[field].eq(value).fillna(False)].tolist()
+
+	standard_concept = value_for("standard_concept")
+	if standard_concept is not None:
+		concept_rows = matches("standard_concept", standard_concept)
+		if len(concept_rows) == 1:
+			return f"standard_concept:{standard_concept}"
+		if len(concept_rows) > 1:
+			# Keep the standard concept in the key, then add the first existing
+			# metadata field that uniquely identifies this duplicate row.
+			for field in (
+				"label",
+				"concept",
+				"parent_concept",
+				"dimension_axis",
+				"dimension_member",
+				"dimension_label",
+				"dimension_member_label",
+				"balance",
+				"weight",
+			):
+				metadata_value = value_for(field)
+				if metadata_value is None:
+					continue
+				duplicate_rows = [
+					row
+					for row in concept_rows
+					if value_for_at(row, field) == metadata_value
+				]
+				if len(duplicate_rows) == 1:
+					return (
+						f"standard_concept:{standard_concept}|"
+						f"{field}:{metadata_value}"
+					)
+			raise FilingEvidenceError("candidate target row has no stable selector")
+
+	label = value_for("label")
+	if label is not None and len(matches("label", label)) == 1:
+		return f"label:{label}"
+	raise FilingEvidenceError("candidate target row has no stable selector")
 
 
 def _candidate_identity(
@@ -186,55 +260,36 @@ def _candidate_identity(
 	candidate: Any,
 	packet_identity: dict[str, Any],
 ) -> str:
-	"""Build a stable exact identity from filing/source facts only."""
-	metadata = packet_identity.get("metadata", {})
-	accession = str(metadata.get("filing_accession", "")).strip()
-	packet_ticker = str(metadata.get("ticker", "")).strip().upper()
-	if not accession or packet_ticker != ticker:
-		raise FilingEvidenceError("evidence packet has incomplete filing identity")
+	"""Build economic identity only; packet provenance is deliberately ignored."""
+	del packet_identity
+	ticker = ticker.strip().upper()
+	if not ticker:
+		raise FilingEvidenceError("company identity is missing")
 	if (
 		not isinstance(candidate.period, str)
 		or not ANNUAL_PERIOD_PATTERN.fullmatch(candidate.period)
 		or candidate.period not in pnl.columns
 	):
 		raise FilingEvidenceError("candidate period is not an exact annual P&L period")
-	line_indices = _source_line_indices(pnl, candidate.target_line)
-	if len(line_indices) != 1 or _is_derived_line(pnl, line_indices[0]):
+	try:
+		line_index = _find_line_index(pnl, candidate.target_line)
+	except (KeyError, ValueError) as exc:
+		raise FilingEvidenceError(
+			"candidate target line is missing, ambiguous, or derived"
+		) from exc
+	if _is_derived_line(pnl, line_index):
 		raise FilingEvidenceError("candidate target line is missing, ambiguous, or derived")
 	if _reported_source_value(pnl, candidate.target_line, candidate.period) is None:
 		raise FilingEvidenceError("candidate target value is missing or non-finite")
-	if not candidate.evidence_refs:
-		raise FilingEvidenceError("candidate identity requires evidence references")
-	items = packet_identity.get("items", {})
-	anchors = []
-	for evidence_ref in dict.fromkeys(candidate.evidence_refs):
-		item = items.get(evidence_ref)
-		if not item:
-			raise FilingEvidenceError("candidate evidence identity is unavailable")
-		anchor = {
-			"source": str(item.get("source", "")).strip(),
-			"section": str(item.get("section", "")).strip(),
-			"locator": str(item.get("locator", "")).strip(),
-		}
-		if not all(anchor.values()):
-			raise FilingEvidenceError("candidate evidence anchor is incomplete")
-		anchors.append(anchor)
+	if not valid_item_key(candidate.item_key):
+		raise FilingEvidenceError("candidate item_key is missing or invalid")
 	return _canonical_json(
 		{
-			"identity_version": "economic-adjustment-v1",
+			"identity_version": IDENTITY_VERSION,
 			"company": ticker,
-			"filing_accession": accession,
-			"target_line": candidate.target_line,
-			"period": candidate.period,
-			"sub_item": candidate.sub_item or "",
-			"evidence_anchors": sorted(
-				anchors,
-				key=lambda anchor: (
-					anchor["source"],
-					anchor["section"],
-					anchor["locator"],
-				),
-			),
+			"fiscal_period": candidate.period,
+			"target_row_key": _target_row_key(pnl, candidate.target_line),
+			"item_key": candidate.item_key,
 		}
 	)
 
@@ -256,72 +311,129 @@ def _canonical_history_json(value: object) -> str | None:
 		return None
 
 
+def _canonical_history_frame(history: pd.DataFrame) -> pd.DataFrame | None:
+	"""Return only validated v2 rows for resolution, or None when unsafe."""
+	rows = _validated_history_identity_rows(history)
+	if rows is None:
+		return None
+	if not rows:
+		return history.iloc[0:0].copy()
+	return history.iloc[[row["_source_index"] for row in rows]].copy()
+
+
+def _history_identity_complete(history: pd.DataFrame) -> bool:
+	"""Return whether canonical history is safe to resolve or apply."""
+	return _validated_history_identity_rows(history) is not None
+
+
 def _history_identity_lookup(
 	history: pd.DataFrame,
 	identity: str,
 	state: str,
 ) -> dict[str, Any]:
-	"""Resolve one identity without guessing through legacy/ambiguous rows.
-
-	Legacy rows without a parseable identity/state cannot match any candidate
-	and are ignored for matching; they are never migrated or guessed.
-	"""
+	"""Resolve exact economic identity and fail closed on occupied conflicts."""
 	if history.empty:
 		return {"status": "new", "adjustment_id": None, "version": 0}
-	required = {"adjustment_id", "version", "candidate_identity", "candidate_state"}
-	if not required.issubset(history.columns):
+	identity_rows = _validated_history_identity_rows(history)
+	if identity_rows is None:
+		return {
+			"status": "identity_unresolved",
+			"adjustment_id": None,
+			"version": 0,
+			"reason": "history contains legacy or corrupted identity data",
+		}
+	identity_parts = _identity_components(identity)
+	if identity_parts is None:
+		return {
+			"status": "identity_unresolved",
+			"adjustment_id": None,
+			"version": 0,
+			"reason": "candidate identity is invalid",
+		}
+	matching_rows = [
+		row
+		for row in identity_rows
+		if row["_identity"] == identity_parts
+	]
+	occupied_rows = [
+		row
+		for row in identity_rows
+		if all(
+			row["_identity"][field] == identity_parts[field]
+			for field in ("company", "fiscal_period", "target_row_key")
+		)
+	]
+	selector_drift_rows = [
+		row
+		for row in identity_rows
+		if all(
+			row["_identity"][field] == identity_parts[field]
+			for field in ("company", "fiscal_period", "item_key")
+		)
+	]
+	selector_family = identity_parts["target_row_key"].split("|", 1)[0]
+	selector_family_rows = [
+		row
+		for row in identity_rows
+		if row["_identity"]["company"] == identity_parts["company"]
+		and row["_identity"]["fiscal_period"] == identity_parts["fiscal_period"]
+		and row["_identity"]["target_row_key"].split("|", 1)[0]
+		== selector_family
+	]
+	if not matching_rows:
+		if occupied_rows:
+			return {
+				"status": "identity_unresolved",
+				"adjustment_id": None,
+				"version": 0,
+				"reason": "occupied row-period has a competing item_key",
+			}
+		if selector_drift_rows:
+			return {
+				"status": "identity_unresolved",
+				"adjustment_id": None,
+				"version": 0,
+				"reason": "matching item_key has a changed target-row selector",
+			}
+		if selector_family_rows and "|" in identity_parts["target_row_key"]:
+			return {
+				"status": "identity_unresolved",
+				"adjustment_id": None,
+				"version": 0,
+				"reason": "occupied concept-period has an ambiguous row selector",
+			}
 		return {"status": "new", "adjustment_id": None, "version": 0}
-	identities = history["candidate_identity"].map(_canonical_history_json)
-	states = history["candidate_state"].map(_canonical_history_json)
-	versions = pd.to_numeric(history["version"], errors="coerce")
-	matchable = (
-		identities.notna()
-		& states.notna()
-		& versions.notna()
-		& versions.ge(1)
-		& versions.mod(1).eq(0)
-	)
-	history = history.loc[matchable]
-	if history.empty:
-		return {"status": "new", "adjustment_id": None, "version": 0}
-	identities = identities.loc[matchable]
-	versions = versions.loc[matchable]
-	matches = history.loc[identities.eq(identity)]
-	if matches.empty:
-		return {"status": "new", "adjustment_id": None, "version": 0}
-	matching_ids = matches["adjustment_id"].dropna().astype(str).unique().tolist()
+	matching_ids = {str(row["adjustment_id"]) for row in matching_rows}
 	if len(matching_ids) != 1:
-		return {"status": "unknown", "adjustment_id": None, "version": 0}
-	adjustment_id = matching_ids[0]
-	id_rows = history.loc[history["adjustment_id"].astype(str).eq(adjustment_id)].copy()
-	id_rows["_version"] = versions.loc[id_rows.index]
-	approved_rows = id_rows.loc[id_rows["status"].eq("approved")]
-	if approved_rows.empty:
-		latest = id_rows.sort_values("_version", kind="mergesort").iloc[-1]
+		return {
+			"status": "identity_unresolved",
+			"adjustment_id": None,
+			"version": 0,
+			"reason": "identity is assigned to multiple adjustment IDs",
+		}
+	adjustment_id = next(iter(matching_ids))
+	id_rows = [row for row in identity_rows if row["adjustment_id"] == adjustment_id]
+	approved_rows = [row for row in id_rows if row.get("status") == "approved"]
+	if not approved_rows:
+		latest = max(id_rows, key=lambda row: row["version"])
 	else:
 		# Current state is governed by the latest approved version. A newer
 		# rejected/proposed workflow row must not hide that effective version.
-		latest = approved_rows.sort_values("_version", kind="mergesort").iloc[-1]
-	latest_version = int(latest["_version"])
-	if _canonical_history_json(latest.get("candidate_identity")) != identity:
-		return {
-			"status": "unknown",
-			"adjustment_id": adjustment_id,
-			"version": latest_version,
-		}
+		latest = max(approved_rows, key=lambda row: row["version"])
+	latest_version = latest["version"]
 	status = str(latest.get("status", ""))
-	if _canonical_history_json(latest.get("candidate_state")) != state:
+	if _canonical_history_json(latest.get("candidate_state")) != _canonical_history_json(state):
 		return {
 			"status": "state_conflict",
 			"adjustment_id": adjustment_id,
 			"version": latest_version,
-			"latest": latest.to_dict(),
+			"latest": latest,
 		}
 	return {
 		"status": "replay" if status == "approved" else "blocked_existing",
 		"adjustment_id": adjustment_id,
 		"version": latest_version,
-		"latest": latest.to_dict(),
+		"latest": latest,
 	}
 
 
@@ -366,67 +478,6 @@ def _materiality_metrics(
 		)
 		for name, denominator in denominators.items()
 	}
-
-
-def _same_line_period(candidate: Any, target_line: object, period: object) -> bool:
-	return candidate.target_line == target_line and candidate.period == period
-
-
-def _candidate_overlap(
-	candidate: Any,
-	identity: str,
-	row: pd.Series | dict[str, Any],
-) -> bool:
-	row_identity = _canonical_history_json(row.get("candidate_identity"))
-	if row_identity == identity:
-		return False
-	if not _same_line_period(candidate, row.get("target_line"), row.get("period")):
-		return False
-	state = _canonical_history_json(row.get("candidate_state"))
-	if state is not None:
-		try:
-			state_data = json.loads(state)
-		except (TypeError, ValueError, json.JSONDecodeError):
-			state_data = {}
-		if candidate.item_amount is not None and state_data.get("item_amount") is not None:
-			try:
-				if float(candidate.item_amount) == float(state_data["item_amount"]):
-					return True
-			except (TypeError, ValueError):
-				pass
-		if candidate.sub_item and candidate.sub_item == state_data.get("sub_item"):
-			return True
-	return bool(candidate.reason and candidate.reason == row.get("reason"))
-
-
-def _possible_duplicate(
-	history: pd.DataFrame,
-	candidate: Any,
-	identity: str,
-	identity_status: str,
-	same_run_candidates: list[tuple[Any, str]],
-) -> bool | None:
-	if identity_status in {"replay", "blocked_existing", "state_conflict"}:
-		return False
-	if identity_status == "unknown":
-		return None
-	for _, row in history.iterrows():
-		if _candidate_overlap(candidate, identity, row):
-			return True
-	for other, other_identity in same_run_candidates:
-		if other_identity != identity and _candidate_overlap(
-			candidate,
-			identity,
-			{
-				"candidate_identity": other_identity,
-				"candidate_state": _canonical_json(_candidate_state(other)),
-				"target_line": other.target_line,
-				"period": other.period,
-				"reason": other.reason,
-			},
-		):
-			return True
-	return False
 
 
 def build_normalization_summary(
@@ -738,12 +789,26 @@ def _gate_conditions(
 	)
 	source_available = source_value is not None
 	line_delta = derive_line_delta(candidate.item_amount, candidate.item_effect_on_line)
-	possible_duplicate = _possible_duplicate(
-		history,
-		candidate,
-		candidate_identity or "",
-		identity_status,
-		same_run_candidates,
+	try:
+		candidate_row_key = _target_row_key(pnl, candidate.target_line)
+	except FilingEvidenceError:
+		candidate_row_key = None
+
+	def same_target_period(
+		target_line: object,
+		period: object,
+		row_key: object = None,
+	) -> bool:
+		if candidate.period != period:
+			return False
+		if candidate_row_key and isinstance(row_key, str) and row_key.strip():
+			return candidate_row_key == row_key
+		return candidate.target_line == target_line
+
+	possible_duplicate = (
+		False
+		if identity_status in {"replay", "blocked_existing", "state_conflict", "new"}
+		else None
 	)
 
 	def _crosses_zero(value: float, delta: float) -> bool:
@@ -769,7 +834,16 @@ def _gate_conditions(
 		aggregate = 0.0
 		unknown_component = False
 		try:
-			current = history if history.empty else resolve_current_adjustments(history)
+			resolution_history = _canonical_history_frame(history)
+			current = (
+				resolution_history
+				if resolution_history is not None and resolution_history.empty
+				else (
+					None
+					if resolution_history is None
+					else resolve_current_adjustments(resolution_history)
+				)
+			)
 		except (TypeError, ValueError, KeyError):
 			current = None
 		if current is None:
@@ -781,8 +855,10 @@ def _gate_conditions(
 				if _canonical_history_json(value) is not None
 			}
 			for row in current.to_dict(orient="records"):
-				if not _same_line_period(
-					candidate, row.get("target_line"), row.get("period")
+				if not same_target_period(
+					row.get("target_line"),
+					row.get("period"),
+					row.get("target_row_key"),
 				):
 					continue
 				if (
@@ -800,9 +876,19 @@ def _gate_conditions(
 					break
 				aggregate += row_delta
 			for other, other_identity in same_run_candidates:
-				if not _same_line_period(
-					candidate, other.target_line, other.period
-				) or other_identity == candidate_identity or other_identity in existing_identities:
+				other_parts = _identity_components(other_identity)
+				other_row_key = (
+					other_parts["target_row_key"]
+					if other_parts is not None
+					else None
+				)
+				if (
+					not same_target_period(
+						other.target_line, other.period, other_row_key
+					)
+					or other_identity == candidate_identity
+					or other_identity in existing_identities
+				):
 					continue
 				other_delta = derive_line_delta(
 					other.item_amount, other.item_effect_on_line
@@ -830,8 +916,9 @@ def _gate_conditions(
 			preview = pd.DataFrame(
 				[
 					{
-						"adjustment_id": "__preview__",
-						"version": 1,
+						"target_row_key": _target_row_key(
+							pnl, candidate.target_line
+						),
 						"target_line": candidate.target_line,
 						"period": candidate.period,
 						"item_amount": candidate.item_amount,
@@ -846,7 +933,7 @@ def _gate_conditions(
 			deterministic_checks_pass = not bool(
 				preview_checks["status"].eq("FAIL").any()
 			)
-		except (KeyError, TypeError, ValueError):
+		except (FilingEvidenceError, KeyError, TypeError, ValueError):
 			deterministic_checks_pass = False
 	return RiskGateConditions(
 		materiality_eligible=materiality_passed,
@@ -1038,11 +1125,9 @@ def _run_adjustment_analysis(
 			raise AdjustmentAnalysisError(f"invalid evidence packet: {exc}") from exc
 
 		for candidate_number, candidate in enumerate(result.candidates):
-			provisional_id = _next_adjustment_id(history, next_display_offset)
-			next_display_offset += 1
 			candidate_data = candidate.model_dump(mode="json")
 			base_record = {
-				"adjustment_id": provisional_id,
+				"adjustment_id": None,
 				"topic": item["topic"],
 				"candidate_number": candidate_number + 1,
 				"candidate": candidate_data,
@@ -1087,8 +1172,17 @@ def _run_adjustment_analysis(
 			lookup = (
 				_history_identity_lookup(working_history, identity, state)
 				if identity is not None
-				else {"status": "unknown", "adjustment_id": None, "version": 0}
+				else {
+					"status": "identity_unresolved",
+					"adjustment_id": None,
+					"version": 0,
+					"reason": identity_error or "candidate identity is unresolved",
+				}
 			)
+			if lookup["status"] == "new":
+				provisional_id = _next_adjustment_id(history, next_display_offset)
+				next_display_offset += 1
+				base_record["adjustment_id"] = provisional_id
 			base_record.update(
 				{
 					"candidate_identity": identity,
@@ -1096,12 +1190,10 @@ def _run_adjustment_analysis(
 					"identity_status": lookup["status"],
 				}
 			)
-			if lookup["status"] == "unknown" and identity_error is None:
-				base_record["error"] = "candidate identity is missing or ambiguous"
-				records.append(base_record)
-				continue
-			if identity_error is not None:
-				base_record["error"] = identity_error
+			if lookup["status"] in {"unknown", "identity_unresolved"}:
+				base_record["error"] = lookup.get("reason") or identity_error or (
+					"candidate identity is missing or ambiguous"
+				)
 			if lookup["status"] in {"replay", "blocked_existing"}:
 				latest = lookup.get("latest", {})
 				persisted_status = str(latest.get("status", ""))
@@ -1154,9 +1246,14 @@ def _run_adjustment_analysis(
 				):
 					if key in metadata:
 						review_metadata.setdefault(key, metadata[key])
+				review_file_id = (
+					lookup["adjustment_id"]
+					or base_record.get("adjustment_id")
+					or f"unresolved_{candidate_number + 1}"
+				)
 				review_path = save_reviewer_result(
 					ticker,
-					lookup["adjustment_id"] or provisional_id,
+					review_file_id,
 					candidate,
 					review,
 					review_metadata,
@@ -1210,7 +1307,7 @@ def _run_adjustment_analysis(
 			records.append(
 				{
 					**base_record,
-					"adjustment_id": lookup["adjustment_id"] or provisional_id,
+					"adjustment_id": lookup["adjustment_id"] or base_record.get("adjustment_id"),
 					"candidate": candidate_data,
 					"review": review_data,
 					"review_metadata": review_metadata,
@@ -1244,13 +1341,22 @@ def _run_adjustment_analysis(
 						"adjustment_id": adjustment_id,
 						"version": version,
 						"schema_version": ADJUSTMENT_SCHEMA_VERSION,
+						"identity_version": IDENTITY_VERSION,
 						"candidate_identity": identity,
 						"candidate_state": state,
 						"run_id": run_id,
 						"origin": "llm",
+						"company": ticker,
+						"fiscal_period": candidate_data["period"],
+						"target_row_key": (
+							_identity_components(identity)["target_row_key"]
+							if _identity_components(identity) is not None
+							else None
+						),
 						"target_line": candidate_data["target_line"],
 						"sub_item": candidate_data.get("sub_item"),
 						"period": candidate_data["period"],
+						"item_key": candidate_data.get("item_key"),
 						"item_amount": candidate_data["item_amount"],
 						"item_effect_on_line": candidate_data["item_effect_on_line"],
 						"line_delta": line_delta,
@@ -1359,7 +1465,16 @@ def _run_adjustment_analysis(
 		history.to_csv(history_path, index=False)
 
 	try:
-		current_adjustments = resolve_current_adjustments(history)
+		resolution_history = _canonical_history_frame(history)
+		if resolution_history is None:
+			# Unknown effective authority must stop application; only inert legacy
+			# proposed/rejected rows resolve to an empty canonical frame.
+			raise ValueError("adjustment history identity is unresolved")
+		current_adjustments = (
+			history.iloc[0:0].copy()
+			if resolution_history.empty
+			else resolve_current_adjustments(resolution_history)
+		)
 		adjusted_pnl = apply_adjustments(pnl, current_adjustments)
 	except (KeyError, TypeError, ValueError) as exc:
 		raise AdjustmentAnalysisError(f"adjustment application failed: {exc}") from exc

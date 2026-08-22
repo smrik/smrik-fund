@@ -167,6 +167,18 @@ class ReviewerInputTests(TestCase):
 
 
 class ReviewerJudgmentContractTests(TestCase):
+	def test_reviewer_cannot_accept_a_generic_item_key(self) -> None:
+		candidate = xbox_candidate().model_copy(update={"item_key": "impairment"})
+
+		with self.assertRaisesRegex(ReviewerError, "generic item_key"):
+			run_reviewer(
+				"MSFT",
+				make_pnl(),
+				candidate,
+				EVIDENCE_PACKET,
+				client=fake_client(accepted_xbox_result()),
+			)
+
 	def test_fabricated_31bn_amount_is_non_accepting_with_attribution_flaw(
 		self,
 	) -> None:

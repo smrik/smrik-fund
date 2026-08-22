@@ -12,7 +12,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
 
-from .adjustment_analysis import AnalystCandidate
+from .adjustment_analysis import AnalystCandidate, valid_item_key
 from .filing import FilingEvidenceError, validate_evidence_refs
 
 DEFAULT_MODEL = "gpt-5.6-luna"
@@ -29,6 +29,11 @@ evidence.
 The candidate target_line and period must exactly match a real supplied P&L
 line and period. Set target_valid or period_valid to false when they do not.
 Do not use fuzzy matching, invent a mapping, or silently rewrite the candidate.
+
+The candidate item_key is an economic subject-and-event slug, not provenance.
+Accept it only when the supplied evidence supports that specific key and it is
+not a generic key such as adjustment, unusual-item, impairment, or
+other-expense. Do not compare it with historical keys or resolve synonyms.
 
 The candidate's amount, amount_basis, and item_effect_on_line are inputs to
 review, not facts to copy. Independently assess from the evidence whether the
@@ -141,6 +146,12 @@ def run_reviewer(
 			result = ReviewResult.model_validate(result)
 	except Exception as exc:
 		raise ReviewerError(f"structured Reviewer call failed: {exc}") from exc
+	if (
+		result.verdict == "accept"
+		and candidate.item_key is not None
+		and not valid_item_key(candidate.item_key)
+	):
+		raise ReviewerError("Reviewer accepted an invalid or generic item_key")
 
 	metadata = {
 		"ticker": payload["ticker"],

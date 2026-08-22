@@ -238,7 +238,7 @@ class AdjustmentAnalysisTests(TestCase):
 				)
 
 			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-			self.assertEqual(manifest["candidates"][0]["adjustment_id"], "A0001")
+			self.assertIsNone(manifest["candidates"][0]["adjustment_id"])
 			self.assertEqual(manifest["candidates"][0]["final_status"], "human_review")
 			self.assertEqual(
 				manifest["candidates"][0]["application_status"], "not_applied"
@@ -319,6 +319,7 @@ class AdjustmentAnalysisTests(TestCase):
 					period="2025-06-30 (FY)",
 					item_amount=10.0,
 					item_effect_on_line="increased_line",
+					item_key="safe-fixture",
 					amount_basis="disclosed",
 					reason="Safe fixture.",
 					evidence_refs=["E1"],
@@ -389,6 +390,7 @@ class AdjustmentAnalysisTests(TestCase):
 			period=PERIOD,
 			item_amount=10.0,
 			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
 			amount_basis="disclosed",
 			reason="Safe frozen fixture.",
 			evidence_refs=["E1"],
@@ -492,11 +494,11 @@ class AdjustmentAnalysisTests(TestCase):
 		legacy = pd.DataFrame(
 			[{"adjustment_id": "A0001", "version": 1, "status": "proposed"}]
 		)
-		# Legacy rows cannot prove direction, but they also cannot match any
-		# candidate identity, so they must not block new candidates.
+		# The candidate identity is invalid; the inert legacy row is not the
+		# reason this lookup remains unresolved.
 		self.assertEqual(
-			_history_identity_lookup(legacy, identity, state),
-			{"status": "new", "adjustment_id": None, "version": 0},
+			_history_identity_lookup(legacy, identity, state)["status"],
+			"identity_unresolved",
 		)
 
 		unparseable = pd.DataFrame(
@@ -511,16 +513,17 @@ class AdjustmentAnalysisTests(TestCase):
 			]
 		)
 		self.assertEqual(
-			_history_identity_lookup(unparseable, identity, state),
-			{"status": "new", "adjustment_id": None, "version": 0},
+			_history_identity_lookup(unparseable, identity, state)["status"],
+			"identity_unresolved",
 		)
 
 		ambiguous = pd.DataFrame(
 			[
-				{
-					"adjustment_id": "A0001",
-					"version": 1,
-					"candidate_identity": identity,
+			{
+				"adjustment_id": "A0001",
+				"version": 1,
+				"target_row_key": "label:Research and development",
+				"candidate_identity": identity,
 					"candidate_state": state,
 					"status": "approved",
 				},
@@ -534,19 +537,40 @@ class AdjustmentAnalysisTests(TestCase):
 			]
 		)
 		self.assertEqual(
-			_history_identity_lookup(ambiguous, identity, state),
-			{"status": "unknown", "adjustment_id": None, "version": 0},
+			_history_identity_lookup(ambiguous, identity, state)["status"],
+			"identity_unresolved",
 		)
 
 	def test_history_identity_lookup_uses_latest_approved_state(self) -> None:
-		identity = _canonical_json({"identity": "stable"})
-		state_v1 = _canonical_json({"item_amount": 10.0})
-		state_v2 = _canonical_json({"item_amount": 12.0})
+		identity = _canonical_json(
+			{
+				"identity_version": "economic-adjustment-v2",
+				"company": "MSFT",
+				"fiscal_period": PERIOD,
+				"target_row_key": "label:Research and development",
+				"item_key": "safe-fixture",
+			}
+		)
+		state_v1 = _canonical_json(
+			{
+				"item_amount": 10.0,
+				"item_effect_on_line": "increased_line",
+				"amount_basis": "disclosed",
+			}
+		)
+		state_v2 = _canonical_json(
+			{
+				"item_amount": 12.0,
+				"item_effect_on_line": "increased_line",
+				"amount_basis": "disclosed",
+			}
+		)
 		history = pd.DataFrame(
 			[
 				{
 					"adjustment_id": "A0001",
 					"version": 1,
+					"target_row_key": "label:Research and development",
 					"candidate_identity": identity,
 					"candidate_state": state_v1,
 					"status": "approved",
@@ -554,6 +578,7 @@ class AdjustmentAnalysisTests(TestCase):
 				{
 					"adjustment_id": "A0001",
 					"version": 2,
+					"target_row_key": "label:Research and development",
 					"candidate_identity": identity,
 					"candidate_state": state_v2,
 					"status": "rejected",
@@ -584,6 +609,7 @@ class AdjustmentAnalysisTests(TestCase):
 			period=PERIOD,
 			item_amount=10.0,
 			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
 			amount_basis="disclosed",
 			reason="Fixture.",
 			evidence_refs=["E1"],
@@ -621,6 +647,7 @@ class AdjustmentAnalysisTests(TestCase):
 			target_line="Research and development",
 			period=PERIOD,
 			item_amount=10.0,
+			item_key="cloud-restructuring",
 			amount_basis="disclosed",
 			sub_item="Cloud restructuring",
 			reason="First distinct item.",
@@ -629,6 +656,7 @@ class AdjustmentAnalysisTests(TestCase):
 		second = first.model_copy(
 			update={
 				"item_amount": 11.0,
+				"item_key": "gaming-restructuring",
 				"sub_item": "Gaming restructuring",
 				"reason": "Second distinct item.",
 				"evidence_refs": ["E2"],
@@ -652,7 +680,7 @@ class AdjustmentAnalysisTests(TestCase):
 			_history_identity_lookup(
 				history, second_identity, _canonical_json(_candidate_state(second))
 			)["status"],
-			"new",
+			"identity_unresolved",
 		)
 
 	def test_changed_unapproved_candidate_preserves_v1_until_v2_is_approved(self) -> None:
@@ -663,6 +691,7 @@ class AdjustmentAnalysisTests(TestCase):
 					period=PERIOD,
 					item_amount=10.0,
 					item_effect_on_line="increased_line",
+					item_key="safe-fixture",
 					amount_basis="disclosed",
 					reason="Safe frozen fixture.",
 					evidence_refs=["E1"],
@@ -752,6 +781,7 @@ class AdjustmentAnalysisTests(TestCase):
 					period=PERIOD,
 					item_amount=10.0,
 					item_effect_on_line="increased_line",
+					item_key="safe-fixture",
 					amount_basis="disclosed",
 					reason="Live-safe fixture.",
 					evidence_refs=["E1"],
@@ -804,6 +834,7 @@ class AdjustmentAnalysisTests(TestCase):
 			period=PERIOD,
 			item_amount=10.0,
 			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
 			amount_basis="disclosed",
 			reason="Fixture.",
 			evidence_refs=["E1"],
@@ -1178,6 +1209,7 @@ class AdjustmentAnalysisTests(TestCase):
 					sub_item="XBOX impairment",
 					period=PERIOD,
 					item_amount=None,
+					item_key="xbox-impairment",
 					amount_basis="unknown",
 					calculation="No attributable amount is separately disclosed.",
 					reason="Potential unusual item.",
@@ -1225,7 +1257,7 @@ class AdjustmentAnalysisTests(TestCase):
 		self.assertIn(
 			"Periods / reported vs candidate magnitudes: "
 			"2025-06-30 (FY)=reported not disclosed, "
-			"candidate magnitude not disclosed (unknown) ",
+			"candidate magnitude not disclosed (unknown);",
 			output,
 		)
 		self.assertIn("Financial assessment: Potential unusual item.", output)
