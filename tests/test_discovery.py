@@ -277,7 +277,8 @@ class DiscoveryTests(TestCase):
 		candidate = AnalystCandidate(
 			target_line="Research and development",
 			period="2026-06-30 (FY)",
-			adjustment_amount=None,
+			item_amount=None,
+			item_effect_on_line=None,
 			amount_basis="unknown",
 			reason="The packet does not quantify the item.",
 			evidence_refs=["E1"],

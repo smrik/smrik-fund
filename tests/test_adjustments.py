@@ -6,6 +6,7 @@ import pandas as pd
 
 from smrik_fund.ingestion.adjustments import (
     apply_adjustments,
+    derive_line_delta,
     resolve_current_adjustments,
 )
 
@@ -70,7 +71,8 @@ def adjustment(
     version: int,
     target_line: str,
     period: str,
-    amount: float,
+    item_amount: float | None,
+    item_effect_on_line: str | None = "increased_line",
     status: str = "approved",
     origin: str = "llm",
 ) -> dict[str, object]:
@@ -81,13 +83,15 @@ def adjustment(
         "origin": origin,
         "target_line": target_line,
         "period": period,
-        "amount": amount,
+        "item_amount": item_amount,
+        "item_effect_on_line": item_effect_on_line,
+        "line_delta": derive_line_delta(item_amount, item_effect_on_line),
         "status": status,
     }
 
 
 class ResolveCurrentAdjustmentsTests(TestCase):
-    def test_latest_version_wins_and_latest_rejection_removes_approval(self) -> None:
+    def test_latest_approved_version_wins_without_stacking(self) -> None:
         history = pd.DataFrame(
             [
                 adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400),
@@ -98,6 +102,14 @@ class ResolveCurrentAdjustmentsTests(TestCase):
                     PERIODS[1],
                     350,
                     origin="human",
+                ),
+                adjustment(
+                    "A0001",
+                    3,
+                    "Cost of revenue",
+                    PERIODS[1],
+                    300,
+                    status="proposed",
                 ),
                 adjustment("A0002", 1, "Cost of revenue", PERIODS[1], 60),
                 adjustment(
@@ -114,10 +126,29 @@ class ResolveCurrentAdjustmentsTests(TestCase):
 
         current = resolve_current_adjustments(history)
 
-        self.assertEqual(current["adjustment_id"].tolist(), ["A0001"])
-        self.assertEqual(current.iloc[0]["version"], 2)
-        self.assertEqual(current.iloc[0]["amount"], 350)
+        self.assertEqual(current["adjustment_id"].tolist(), ["A0001", "A0002"])
+        self.assertEqual(current["version"].tolist(), [2, 1])
+        self.assertEqual(current["item_amount"].tolist(), [350, 60])
         pd.testing.assert_frame_equal(history, history_before)
+
+    def test_later_rejection_does_not_remove_prior_approval(self) -> None:
+        history = pd.DataFrame(
+            [
+                adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400),
+                adjustment(
+                    "A0001",
+                    2,
+                    "Cost of revenue",
+                    PERIODS[1],
+                    350,
+                    status="rejected",
+                ),
+            ]
+        )
+
+        current = resolve_current_adjustments(history)
+
+        self.assertEqual(current[["adjustment_id", "version"]].values.tolist(), [["A0001", 1]])
 
 
 class ApplyAdjustmentsTests(TestCase):
@@ -167,11 +198,145 @@ class ApplyAdjustmentsTests(TestCase):
         )
         pd.testing.assert_frame_equal(adjusted, reordered)
 
-    def test_negative_amount_is_not_an_alternate_sign_convention(self) -> None:
+    def test_non_positive_item_amount_fails_closed(self) -> None:
         history = pd.DataFrame(
             [adjustment("A0001", 1, "Cost of revenue", PERIODS[1], -100)]
         )
 
-        with self.assertRaisesRegex(ValueError, "non-negative"):
+        with self.assertRaisesRegex(ValueError, "line_delta"):
             apply_adjustments(make_pnl(), history)
+
+    def test_legacy_row_without_direction_fails_closed(self) -> None:
+        history = pd.DataFrame(
+            [
+                {
+                    "adjustment_id": "A0001",
+                    "version": 1,
+                    "run_id": "legacy",
+                    "origin": "llm",
+                    "target_line": "Cost of revenue",
+                    "period": PERIODS[1],
+                    "amount": 100.0,
+                    "status": "approved",
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "fail closed"):
+            apply_adjustments(make_pnl(), history)
+
+
+class DeriveLineDeltaTests(TestCase):
+    def test_expense_in_expense_line_derives_negative_delta(self) -> None:
+        self.assertEqual(derive_line_delta(10.0, "increased_line"), -10.0)
+
+    def test_gain_reducing_expense_line_derives_positive_delta(self) -> None:
+        self.assertEqual(derive_line_delta(0.5, "decreased_line"), 0.5)
+
+    def test_unsupported_fact_leaves_delta_underived(self) -> None:
+        self.assertIsNone(derive_line_delta(0.5, None))
+        self.assertIsNone(derive_line_delta(None, "decreased_line"))
+        self.assertIsNone(derive_line_delta(None, None))
+
+    def test_non_positive_or_unknown_effect_fails_closed(self) -> None:
+        for amount, effect in (
+            (-100.0, "increased_line"),
+            (0.0, "decreased_line"),
+            (10.0, "unknown"),
+            (float("nan"), "increased_line"),
+        ):
+            with self.subTest(amount=amount, effect=effect):
+                self.assertIsNone(derive_line_delta(amount, effect))
+
+
+class SignDirectionArithmeticTests(TestCase):
+    def test_proof_case_2_gain_inside_expense_line_increases_the_line(self) -> None:
+        source = make_pnl()
+        history = pd.DataFrame(
+            [
+                adjustment(
+                    "A0001", 1, "General and administrative", PERIODS[0], 10.0,
+                    item_effect_on_line="decreased_line",
+                )
+            ]
+        )
+
+        adjusted = apply_adjustments(source, history)
+
+        ga = adjusted.loc[
+            adjusted["label"] == "General and administrative"
+        ].iloc[0]
+        operating_income = adjusted.loc[
+            adjusted["standard_concept"] == "OperatingIncomeLoss"
+        ].iloc[0]
+        # The gain reduced reported G&A, so removing it raises G&A back.
+        self.assertEqual(ga[PERIODS[0]], 60.0)
+        self.assertEqual(operating_income[PERIODS[0]], 190.0)
+
+    def test_proof_case_3_gain_inside_positive_income_line_decreases_it(self) -> None:
+        source = make_pnl()
+        history = pd.DataFrame(
+            [
+                adjustment(
+                    "A0001", 1, "Other income (expense), net", PERIODS[0], 6.5,
+                    item_effect_on_line="increased_line",
+                )
+            ]
+        )
+
+        adjusted = apply_adjustments(source, history)
+
+        oie = adjusted.loc[
+            adjusted["label"] == "Other income (expense), net"
+        ].iloc[0]
+        pretax = adjusted.loc[
+            adjusted["standard_concept"] == "PretaxIncomeLoss"
+        ].iloc[0]
+        self.assertEqual(oie[PERIODS[0]], 3.5)
+        self.assertEqual(pretax[PERIODS[0]], 203.5)
+
+    def test_proof_case_4_loss_inside_negative_income_line_raises_it(self) -> None:
+        source = make_pnl()
+        history = pd.DataFrame(
+            [
+                adjustment(
+                    "A0001", 1, "Other income (expense), net", PERIODS[1], 4.8,
+                    item_effect_on_line="decreased_line",
+                )
+            ]
+        )
+
+        adjusted = apply_adjustments(source, history)
+
+        oie = adjusted.loc[
+            adjusted["label"] == "Other income (expense), net"
+        ].iloc[0]
+        pretax = adjusted.loc[
+            adjusted["standard_concept"] == "PretaxIncomeLoss"
+        ].iloc[0]
+        # Negative parent line alone must not block or flip the arithmetic.
+        self.assertAlmostEqual(oie[PERIODS[1]], -0.2)
+        self.assertAlmostEqual(pretax[PERIODS[1]], 219.8)
+
+    def test_proof_case_5_tax_expense_removal_lowers_provision(self) -> None:
+        source = make_pnl()
+        history = pd.DataFrame(
+            [
+                adjustment(
+                    "A0001", 1, "Provision for income taxes", PERIODS[0], 1.4,
+                    item_effect_on_line="increased_line",
+                )
+            ]
+        )
+
+        adjusted = apply_adjustments(source, history)
+
+        taxes = adjusted.loc[
+            adjusted["label"] == "Provision for income taxes"
+        ].iloc[0]
+        net_income = adjusted.loc[
+            adjusted["standard_concept"] == "NetIncome"
+        ].iloc[0]
+        self.assertAlmostEqual(taxes[PERIODS[0]], 40.6)
+        self.assertAlmostEqual(net_income[PERIODS[0]], 169.4)
 

@@ -13,12 +13,16 @@ PERIOD = "2026-06-30 (FY)"
 
 
 def candidate(
-	*, amount: float | None = 100.0, basis: str = "disclosed"
+	*,
+	amount: float | None = 100.0,
+	effect: str | None = "increased_line",
+	basis: str = "disclosed",
 ) -> AnalystCandidate:
 	return AnalystCandidate(
 		target_line="Research and development",
 		period=PERIOD,
-		adjustment_amount=amount,
+		item_amount=amount,
+		item_effect_on_line=effect,
 		amount_basis=basis,
 		reason="Supported candidate.",
 		evidence_refs=["E1"],
@@ -34,6 +38,7 @@ def review(
 	calculation_valid: bool | None = None,
 	target_valid: bool = True,
 	period_valid: bool | None = True,
+	effect: str | None = "increased_line",
 	suggested_amount: float | None = None,
 ) -> ReviewResult:
 	return ReviewResult(
@@ -43,6 +48,7 @@ def review(
 		judgment_level=judgment,
 		calculation_valid=calculation_valid,
 		target_valid=target_valid,
+		item_effect_on_line=effect,
 		period_valid=period_valid,
 		concerns=[],
 		suggested_amount=suggested_amount,
@@ -57,9 +63,8 @@ def eligible_conditions() -> RiskGateConditions:
 		group_reconciles=True,
 		aggregate_over_adjustment=False,
 		source_target_available=True,
-		source_target_negative=False,
 		individual_over_adjustment=False,
-		zero_target_with_positive_adjustment=False,
+		zero_target_with_line_delta=False,
 		deterministic_checks_pass=True,
 	)
 
@@ -100,15 +105,53 @@ class RiskGateTests(TestCase):
 		result = evaluate_risk_gate(
 			candidate(amount=None), review(basis="unknown"), eligible_conditions()
 		)
-		self.assertIn("adjustment_amount_missing", result.reasons)
+		self.assertIn("item_amount_missing", result.reasons)
 
-	def test_negative_adjustment_amount_requires_human_review(self) -> None:
+	def test_non_positive_item_amount_requires_human_review(self) -> None:
+		for amount in (-100.0, 0.0):
+			with self.subTest(amount=amount):
+				result = evaluate_risk_gate(
+					candidate(amount=amount), review(), eligible_conditions()
+				)
+				self.assertTrue(result.requires_human_review)
+				self.assertIn("item_amount_not_positive", result.reasons)
+
+	def test_amount_without_direction_cannot_derive_delta(self) -> None:
 		result = evaluate_risk_gate(
-			candidate(amount=-100.0), review(), eligible_conditions()
+			candidate(effect=None), review(effect=None), eligible_conditions()
 		)
 
 		self.assertTrue(result.requires_human_review)
-		self.assertIn("adjustment_amount_negative", result.reasons)
+		self.assertIn("line_delta_underived", result.reasons)
+
+	def test_analyst_reviewer_effect_disagreement_fails_closed(self) -> None:
+		result = evaluate_risk_gate(
+			candidate(effect="decreased_line"),
+			review(effect="increased_line"),
+			eligible_conditions(),
+		)
+
+		self.assertTrue(result.requires_human_review)
+		self.assertIn("item_effect_disagreement", result.reasons)
+
+	def test_missing_reviewer_effect_fails_closed(self) -> None:
+		result = evaluate_risk_gate(
+			candidate(effect="increased_line"),
+			review(effect=None),
+			eligible_conditions(),
+		)
+
+		self.assertTrue(result.requires_human_review)
+		self.assertIn("item_effect_disagreement", result.reasons)
+
+	def test_matching_effect_direction_is_auto_approvable(self) -> None:
+		result = evaluate_risk_gate(
+			candidate(effect="decreased_line"),
+			review(effect="decreased_line"),
+			eligible_conditions(),
+		)
+
+		self.assertEqual(result.decision, "auto_approve")
 
 	def test_dangerous_31bn_fixture_stays_human_review(self) -> None:
 		result = evaluate_risk_gate(
@@ -194,19 +237,14 @@ class RiskGateTests(TestCase):
 				"source_target_missing_or_unknown",
 			),
 			(
-				"negative target",
-				{"source_target_negative": True},
-				"source_target_negative_or_unknown",
-			),
-			(
 				"individual over-adjustment",
 				{"individual_over_adjustment": True},
 				"individual_over_adjustment_or_unknown",
 			),
 			(
-				"zero target",
-				{"zero_target_with_positive_adjustment": True},
-				"zero_target_positive_adjustment_or_unknown",
+				"zero target with delta",
+				{"zero_target_with_line_delta": True},
+				"zero_target_with_line_delta_or_unknown",
 			),
 			(
 				"deterministic",

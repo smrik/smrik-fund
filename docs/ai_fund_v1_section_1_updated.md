@@ -362,7 +362,9 @@ Therefore:
 
 > `adjustment_history.csv` is the canonical adjustment store.
 
-Current adjustments are derived from the latest version of each adjustment ID.
+Current adjustments are derived from the latest approved version of each
+adjustment ID. Non-approved workflow rows remain history and do not remove the
+last approved version; a later approved version replaces it without stacking.
 
 Do not build an event-sourcing framework.
 A plain append-style CSV is enough.
@@ -442,16 +444,16 @@ Resolution rule:
 ```text
 adjustment_history.csv
     ↓
-latest version for each adjustment_id
+keep approved rows
     ↓
-keep status == approved
+latest approved version for each adjustment_id
     ↓
 current adjustments
 ```
 
 Important:
 
-> Select the latest version first. Then check the status.
+> Select approved versions first. Then keep the latest approved version per ID.
 
 Example:
 
@@ -460,9 +462,10 @@ A0001 v1 approved
 A0001 v2 rejected
 ```
 
-Current state: A0001 is not applied.
+Current state: A0001 v1 remains applied. A later approved version would replace
+v1; the rejected row never stacks or removes the effective approval.
 
-Do not search for the latest historical approved version.
+Do not let a newer non-approved workflow row hide the latest approved version.
 
 A separate `adjustments.csv` may be written as a convenience view, but it is derived and never edited directly.
 
@@ -474,40 +477,46 @@ Preserve EdgarTools source values as returned.
 
 Do not create a custom signed management-P&L convention just to support adjustments.
 
-V1 adjustment convention:
+V1 adjustment convention (implementation-corrected 2026-08-22):
 
 ```text
-adjustment amount = positive magnitude being removed
-adjusted value    = reported value - total approved adjustment
+item_amount          = positive magnitude of the item's effect on the target line
+item_effect_on_line  = increased_line | decreased_line   (evidence-backed, may be null)
+line_delta           = derived by Python: -item_amount (increased_line) or +item_amount (decreased_line)
+adjusted value       = reported value + sum of approved line deltas
 ```
 
-Example:
+The LLM never authors a signed number. The sign of the parent P&L line does not
+determine the adjustment direction; the item's own effect on the line does.
+
+Examples:
 
 ```text
 Reported SG&A     500
-Adjustment        400
-Adjusted SG&A     100
+Divestiture gain  400  (decreased_line: the gain reduced SG&A)
+line_delta        +400
+Adjusted SG&A     900
 ```
-
-Example for unusual revenue:
 
 ```text
-Reported revenue  1,000
-Adjustment          100
-Adjusted revenue    900
+Reported revenue    1,000
+Unusual revenue      100  (increased_line)
+line_delta           -100
+Adjusted revenue     900
 ```
 
-Negative source facts can occur.
-They are outside the simple auto-approval path.
+A loss inside a negative Other income line works identically:
+`-4.9bn reported, loss 4.8bn (decreased_line) -> delta +4.8bn -> adjusted -0.1bn`.
 
-Rule:
+`item_amount` and `item_effect_on_line` are independently supportable facts.
+Either one alone leaves the candidate unresolved for application; both must be
+proven before a signed delta exists.
 
-```text
-reported target value < 0
--> require human review
-```
+Direction-dependent bounds use `line_delta`: a delta that pushes an adjusted
+value through zero removes more than the reported line holds and requires
+human review. A negative reported line alone is no longer a gate failure.
 
-Do not add a second sign framework until a real case proves that it is needed.
+Legacy positive-magnitude history rows cannot prove direction and fail closed.
 
 ---
 
@@ -1104,7 +1113,8 @@ Baseline V1 auto-approval requires all relevant conditions to be safe, including
 - no duplicate conflict;
 - no group-reconciliation problem;
 - no aggregate over-adjustment;
-- source target is not negative;
+- Analyst and Reviewer agree on the item's effect on the line;
+- the derived line delta does not push the adjusted value through zero;
 - all other hard mechanics checks pass.
 
 If the system cannot establish that an adjustment is safe to auto-accept:
@@ -1415,7 +1425,8 @@ Good use:
 class AdjustmentCandidate(BaseModel):
     target_line: str
     period: str
-    adjustment_amount: float | None
+    item_amount: float | None
+    item_effect_on_line: Literal["increased_line", "decreased_line"] | None
 ```
 
 Bad direction:
@@ -1685,7 +1696,8 @@ Protect the business invariants that can make the financial output wrong.
 Examples:
 
 - reported values remain unchanged;
-- latest rejected version removes an earlier approved adjustment;
+- latest rejected/proposed version leaves an earlier approved adjustment effective;
+- latest approved version replaces the earlier approved adjustment without stacking;
 - multiple adjustments to one line are summed once;
 - adjustment order does not matter;
 - derived subtotals are recalculated, not double-adjusted;
@@ -2217,13 +2229,18 @@ They are now resolved.
 
 ### Sign convention
 
-Resolved:
+Resolved (implementation-corrected 2026-08-22):
 
 ```text
 preserve EdgarTools source values
-adjustment = positive magnitude removed
-adjusted = reported - approved adjustments
+item_amount = positive magnitude + item_effect_on_line (evidence-backed)
+line_delta derived by Python
+adjusted = reported + line_delta
 ```
+
+The earlier "positive magnitude always subtracted" rule was replaced after the
+live MSFT divestiture-gain case proved it could move adjusted earnings in the
+financially wrong direction.
 
 ### Storage format
 

@@ -14,21 +14,29 @@ from pydantic import BaseModel, ConfigDict
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-PROMPT_VERSION = "analyst-v2"
-SCHEMA_VERSION = "analyst-result-v2"
+PROMPT_VERSION = "analyst-v3"
+SCHEMA_VERSION = "analyst-result-v3"
 
 ANALYST_PROMPT = """You are a financial analyst identifying normalization candidates.
 Use only the supplied P&L context and evidence packet.
-Adjustment amounts are absolute USD magnitudes. Use the V1 convention that an
-adjustment amount is the positive magnitude being removed. If the attributable
-amount is not supported by the supplied evidence, return adjustment_amount as
-null; do not invent or infer an unsupported amount.
-Preserve the signed P&L values in your reasoning. If the reported target line is
-negative, describe it as a loss and do not claim that subtracting a positive
-adjustment would increase normalized income; leave that treatment for human
-review under V1.
-The target_line and period must exactly match the supplied P&L values. Do not
-paraphrase, normalize, or substitute them.
+For each candidate, report two independently supportable facts about the
+unusual item:
+- item_amount: the positive magnitude of the item's effect on the target line,
+  or null when the filing does not support a magnitude. Never negative.
+- item_effect_on_line: did this item make the reported target-line value larger
+  or smaller? Answer increased_line or decreased_line from the evidence, or
+  null when the filing does not establish the direction.
+The two facts are independent. Report a supported magnitude with unknown
+direction, or a clear direction with unsupported magnitude, rather than
+guessing either one. A disclosed net amount is one item; judge its effect on
+the line as disclosed. In the supplied analytical P&L, expense lines such as
+R&D are displayed as positive magnitudes; judge effects against the displayed
+values, not against an assumed negative expense sign. Python derives the
+signed line adjustment and applies
+it; never output signed deltas or adjusted values yourself.
+Preserve the signed P&L values in your reasoning. The target_line and period
+must exactly match the supplied P&L values. Do not paraphrase, normalize, or
+substitute them.
 Return plausible candidates with the target line, period, amount basis, reason,
 evidence references, and uncertainty. Use the evidence IDs exactly as written
 in the packet (for example, E1 or E2).
@@ -39,7 +47,7 @@ IDs or invent an amount. A research request is a retrieval need, not a fact.
 
 
 class AnalystCandidate(BaseModel):
-	"""One raw candidate; unresolved amounts are valid Analyst output."""
+	"""One raw candidate; unresolved amounts or directions are valid output."""
 
 	model_config = ConfigDict(extra="forbid")
 
@@ -47,7 +55,8 @@ class AnalystCandidate(BaseModel):
 	target_line: str
 	sub_item: str | None = None
 	period: str
-	adjustment_amount: float | None = None
+	item_amount: float | None = None
+	item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
 	amount_basis: Literal["disclosed", "calculated", "estimated", "unknown"]
 	calculation: str | None = None
 	reason: str

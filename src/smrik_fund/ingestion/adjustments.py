@@ -2,12 +2,52 @@
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from .statements import ANNUAL_PERIOD_PATTERN, prepare_pnl
 
+# Schema version 2 stores item_amount + item_effect_on_line and the derived
+# signed line_delta. Version 1 rows (positive magnitude, always subtracted)
+# cannot prove direction and fail closed.
+ADJUSTMENT_SCHEMA_VERSION = 2
+
+_ITEM_EFFECT_LINE_DELTAS = {
+	# The item made the reported line larger, so removing it lowers the line.
+	"increased_line": -1.0,
+	# The item made the reported line smaller, so removing it raises the line.
+	"decreased_line": 1.0,
+}
+
 _HISTORY_COLUMNS = {"adjustment_id", "version", "status"}
-_ADJUSTMENT_COLUMNS = {"target_line", "period", "amount"}
+_ADJUSTMENT_COLUMNS = {"target_line", "period", "item_amount", "item_effect_on_line"}
+
+
+def derive_line_delta(
+	item_amount: object,
+	item_effect_on_line: object,
+) -> float | None:
+	"""Derive the signed line delta from two independent supported facts.
+
+	``adjusted_value = reported_value + line_delta``. Either input being
+	unsupported leaves the delta underived; nothing is guessed.
+	"""
+	if item_amount is None or item_effect_on_line is None:
+		return None
+	try:
+		if pd.isna(item_amount) or pd.isna(item_effect_on_line):
+			return None
+	except (TypeError, ValueError):
+		pass
+	try:
+		amount = float(item_amount)
+	except (TypeError, ValueError):
+		return None
+	if not math.isfinite(amount) or amount <= 0:
+		return None
+	effect = _ITEM_EFFECT_LINE_DELTAS.get(str(item_effect_on_line))
+	return None if effect is None else effect * amount
 _DERIVED_CONCEPTS = {
     "GrossProfit",
     "OperatingIncomeLoss",
@@ -23,7 +63,12 @@ _DERIVED_LABELS = {
 
 
 def resolve_current_adjustments(history: pd.DataFrame) -> pd.DataFrame:
-    """Select the latest version per ID, then keep approved versions."""
+    """Select the latest approved version for each adjustment ID.
+
+    Non-approved workflow rows remain history only: they do not remove an
+    earlier approved version from the current applied set. A later approved
+    version replaces that ID's earlier approved version rather than stacking.
+    """
     if not isinstance(history, pd.DataFrame):
         raise TypeError("history must be a pandas DataFrame")
     _require_columns(history, _HISTORY_COLUMNS, "adjustment history")
@@ -38,8 +83,12 @@ def resolve_current_adjustments(history: pd.DataFrame) -> pd.DataFrame:
     if history.duplicated(["adjustment_id", "version"]).any():
         raise ValueError("each adjustment_id/version pair must be unique")
 
+    approved = history.loc[history["status"].eq("approved")].copy()
+    if approved.empty:
+        return approved.reset_index(drop=True)
+
     latest = (
-        history.assign(_version_number=versions)
+        approved.assign(_version_number=versions.loc[approved.index])
         .sort_values(["adjustment_id", "_version_number"], kind="mergesort")
         .groupby("adjustment_id", sort=True, dropna=False)
         .tail(1)
@@ -47,7 +96,7 @@ def resolve_current_adjustments(history: pd.DataFrame) -> pd.DataFrame:
         .sort_values("adjustment_id", kind="mergesort")
         .reset_index(drop=True)
     )
-    return latest.loc[latest["status"].eq("approved")].reset_index(drop=True)
+    return latest
 
 
 def apply_adjustments(
@@ -71,9 +120,9 @@ def apply_adjustments(
         totals = (
             current.groupby(
                 ["target_line", "period"], sort=True, as_index=False, dropna=False
-            )["_amount_number"]
+            )["_line_delta_number"]
             .sum()
-            .rename(columns={"_amount_number": "amount"})
+            .rename(columns={"_line_delta_number": "line_delta"})
         )
         for adjustment in totals.itertuples(index=False):
             if adjustment.period not in periods:
@@ -91,8 +140,9 @@ def apply_adjustments(
                     f"cannot adjust missing reported value for "
                     f"{adjustment.target_line!r} / {adjustment.period!r}"
                 )
+            # adjusted = reported + signed line delta
             result.at[line_index, adjustment.period] = (
-                reported - float(adjustment.amount)
+                reported + float(adjustment.line_delta)
             )
 
     _recalculate_subtotals(result, periods)
@@ -115,19 +165,31 @@ def _current_approved_adjustments(adjustments: pd.DataFrame) -> pd.DataFrame:
             raise ValueError("adjustments must contain approved rows only")
         current = adjustments.copy(deep=True)
 
-    _require_columns(current, _ADJUSTMENT_COLUMNS, "adjustments")
     if current.empty:
-        current["_amount_number"] = pd.Series(dtype="float64")
+        current["_line_delta_number"] = pd.Series(dtype="float64")
         return current
+    try:
+        _require_columns(current, _ADJUSTMENT_COLUMNS, "adjustments")
+    except ValueError as exc:
+        raise ValueError(
+            f"{exc}; approved adjustments require item_amount and "
+            "item_effect_on_line so the direction is provable; legacy rows "
+            "without them fail closed"
+        ) from exc
     if current["target_line"].isna().any() or current["period"].isna().any():
         raise ValueError("target_line and period cannot be missing")
-    amounts = pd.to_numeric(current["amount"], errors="coerce")
-    if amounts.isna().any() or (amounts < 0).any():
+    deltas = [
+        derive_line_delta(row.item_amount, row.item_effect_on_line)
+        for row in current.itertuples(index=False)
+    ]
+    if any(delta is None for delta in deltas):
         raise ValueError(
-            "approved adjustment amounts must be non-negative numeric magnitudes"
+            "approved adjustments require a positive item_amount and an "
+            "item_effect_on_line that together derive a line_delta; legacy "
+            "rows without a provable direction fail closed"
         )
     current = current.copy(deep=True)
-    current["_amount_number"] = amounts
+    current["_line_delta_number"] = pd.Series(deltas, index=current.index, dtype="float64")
     return current
 
 

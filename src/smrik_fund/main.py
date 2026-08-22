@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,13 @@ from .ingestion.adjustment_analysis import (
 	AdjustmentAnalysisError,
 	run_analyst,
 )
-from .ingestion.adjustments import apply_adjustments, resolve_current_adjustments
+from .ingestion.adjustments import (
+	ADJUSTMENT_SCHEMA_VERSION,
+	_is_derived_line,
+	apply_adjustments,
+	derive_line_delta,
+	resolve_current_adjustments,
+)
 from .ingestion.discovery import (
 	DiscoveryError,
 	DiscoveryResult,
@@ -41,6 +48,7 @@ from .ingestion.risk_gate import (
 	evaluate_risk_gate,
 )
 from .ingestion.statements import (
+	ANNUAL_PERIOD_PATTERN,
 	build_analytical_pnl,
 	load_analytical_pnl,
 	save_analytical_pnl,
@@ -88,6 +96,8 @@ def _new_run_id() -> str:
 _HISTORY_COLUMNS = (
 	"adjustment_id",
 	"version",
+	"candidate_identity",
+	"candidate_state",
 	"target_line",
 	"period",
 	"amount",
@@ -142,7 +152,281 @@ def _reported_source_value(
 	value = pd.to_numeric(
 		pd.Series([pnl.at[line_indices[0], period]]), errors="coerce"
 	).iloc[0]
-	return None if pd.isna(value) else float(value)
+	if pd.isna(value):
+		return None
+	value = float(value)
+	return value if math.isfinite(value) else None
+
+
+def _canonical_json(value: object) -> str:
+	return json.dumps(
+		value,
+		ensure_ascii=False,
+		sort_keys=True,
+		separators=(",", ":"),
+	)
+
+
+def _candidate_state(candidate: Any) -> dict[str, Any]:
+	amount = candidate.item_amount
+	return {
+		"target_line": candidate.target_line,
+		"period": candidate.period,
+		"item_amount": None if amount is None else float(amount),
+		"item_effect_on_line": candidate.item_effect_on_line,
+		"amount_basis": candidate.amount_basis,
+		"sub_item": candidate.sub_item or "",
+		"group_id": getattr(candidate, "group_id", None) or "",
+	}
+
+
+def _candidate_identity(
+	ticker: str,
+	pnl: pd.DataFrame,
+	candidate: Any,
+	packet_identity: dict[str, Any],
+) -> str:
+	"""Build a stable exact identity from filing/source facts only."""
+	metadata = packet_identity.get("metadata", {})
+	accession = str(metadata.get("filing_accession", "")).strip()
+	packet_ticker = str(metadata.get("ticker", "")).strip().upper()
+	if not accession or packet_ticker != ticker:
+		raise FilingEvidenceError("evidence packet has incomplete filing identity")
+	if (
+		not isinstance(candidate.period, str)
+		or not ANNUAL_PERIOD_PATTERN.fullmatch(candidate.period)
+		or candidate.period not in pnl.columns
+	):
+		raise FilingEvidenceError("candidate period is not an exact annual P&L period")
+	line_indices = _source_line_indices(pnl, candidate.target_line)
+	if len(line_indices) != 1 or _is_derived_line(pnl, line_indices[0]):
+		raise FilingEvidenceError("candidate target line is missing, ambiguous, or derived")
+	if _reported_source_value(pnl, candidate.target_line, candidate.period) is None:
+		raise FilingEvidenceError("candidate target value is missing or non-finite")
+	if not candidate.evidence_refs:
+		raise FilingEvidenceError("candidate identity requires evidence references")
+	items = packet_identity.get("items", {})
+	anchors = []
+	for evidence_ref in dict.fromkeys(candidate.evidence_refs):
+		item = items.get(evidence_ref)
+		if not item:
+			raise FilingEvidenceError("candidate evidence identity is unavailable")
+		anchor = {
+			"source": str(item.get("source", "")).strip(),
+			"section": str(item.get("section", "")).strip(),
+			"locator": str(item.get("locator", "")).strip(),
+		}
+		if not all(anchor.values()):
+			raise FilingEvidenceError("candidate evidence anchor is incomplete")
+		anchors.append(anchor)
+	return _canonical_json(
+		{
+			"identity_version": "economic-adjustment-v1",
+			"company": ticker,
+			"filing_accession": accession,
+			"target_line": candidate.target_line,
+			"period": candidate.period,
+			"sub_item": candidate.sub_item or "",
+			"evidence_anchors": sorted(
+				anchors,
+				key=lambda anchor: (
+					anchor["source"],
+					anchor["section"],
+					anchor["locator"],
+				),
+			),
+		}
+	)
+
+
+def _canonical_history_json(value: object) -> str | None:
+	if value is None:
+		return None
+	try:
+		if pd.isna(value):
+			return None
+	except (TypeError, ValueError):
+		pass
+	text = str(value).strip()
+	if not text or text.casefold() == "nan":
+		return None
+	try:
+		return _canonical_json(json.loads(text))
+	except (TypeError, ValueError, json.JSONDecodeError):
+		return None
+
+
+def _history_identity_lookup(
+	history: pd.DataFrame,
+	identity: str,
+	state: str,
+) -> dict[str, Any]:
+	"""Resolve one identity without guessing through legacy/ambiguous rows.
+
+	Legacy rows without a parseable identity/state cannot match any candidate
+	and are ignored for matching; they are never migrated or guessed.
+	"""
+	if history.empty:
+		return {"status": "new", "adjustment_id": None, "version": 0}
+	required = {"adjustment_id", "version", "candidate_identity", "candidate_state"}
+	if not required.issubset(history.columns):
+		return {"status": "new", "adjustment_id": None, "version": 0}
+	identities = history["candidate_identity"].map(_canonical_history_json)
+	states = history["candidate_state"].map(_canonical_history_json)
+	versions = pd.to_numeric(history["version"], errors="coerce")
+	matchable = (
+		identities.notna()
+		& states.notna()
+		& versions.notna()
+		& versions.ge(1)
+		& versions.mod(1).eq(0)
+	)
+	history = history.loc[matchable]
+	if history.empty:
+		return {"status": "new", "adjustment_id": None, "version": 0}
+	identities = identities.loc[matchable]
+	versions = versions.loc[matchable]
+	matches = history.loc[identities.eq(identity)]
+	if matches.empty:
+		return {"status": "new", "adjustment_id": None, "version": 0}
+	matching_ids = matches["adjustment_id"].dropna().astype(str).unique().tolist()
+	if len(matching_ids) != 1:
+		return {"status": "unknown", "adjustment_id": None, "version": 0}
+	adjustment_id = matching_ids[0]
+	id_rows = history.loc[history["adjustment_id"].astype(str).eq(adjustment_id)].copy()
+	id_rows["_version"] = versions.loc[id_rows.index]
+	approved_rows = id_rows.loc[id_rows["status"].eq("approved")]
+	if approved_rows.empty:
+		latest = id_rows.sort_values("_version", kind="mergesort").iloc[-1]
+	else:
+		# Current state is governed by the latest approved version. A newer
+		# rejected/proposed workflow row must not hide that effective version.
+		latest = approved_rows.sort_values("_version", kind="mergesort").iloc[-1]
+	latest_version = int(latest["_version"])
+	if _canonical_history_json(latest.get("candidate_identity")) != identity:
+		return {
+			"status": "unknown",
+			"adjustment_id": adjustment_id,
+			"version": latest_version,
+		}
+	status = str(latest.get("status", ""))
+	if _canonical_history_json(latest.get("candidate_state")) != state:
+		return {
+			"status": "state_conflict",
+			"adjustment_id": adjustment_id,
+			"version": latest_version,
+			"latest": latest.to_dict(),
+		}
+	return {
+		"status": "replay" if status == "approved" else "blocked_existing",
+		"adjustment_id": adjustment_id,
+		"version": latest_version,
+		"latest": latest.to_dict(),
+	}
+
+
+def _materiality_metrics(
+	pnl: pd.DataFrame,
+	candidate: Any,
+) -> dict[str, float | None]:
+	amount = candidate.item_amount
+	if amount is None:
+		return {
+			"pct_revenue": None,
+			"pct_target_line": None,
+			"pct_operating_income": None,
+		}
+	try:
+		amount_number = float(amount)
+	except (TypeError, ValueError):
+		return {
+			"pct_revenue": None,
+			"pct_target_line": None,
+			"pct_operating_income": None,
+		}
+	if not math.isfinite(amount_number):
+		return {
+			"pct_revenue": None,
+			"pct_target_line": None,
+			"pct_operating_income": None,
+		}
+	period = candidate.period
+	denominators = {
+		"pct_revenue": _reported_source_value(pnl, "Revenue", period),
+		"pct_target_line": _reported_source_value(pnl, candidate.target_line, period),
+		"pct_operating_income": _reported_source_value(
+			pnl, "Operating income", period
+		),
+	}
+	return {
+		name: (
+			None
+			if denominator is None or denominator == 0
+			else amount_number / denominator
+		)
+		for name, denominator in denominators.items()
+	}
+
+
+def _same_line_period(candidate: Any, target_line: object, period: object) -> bool:
+	return candidate.target_line == target_line and candidate.period == period
+
+
+def _candidate_overlap(
+	candidate: Any,
+	identity: str,
+	row: pd.Series | dict[str, Any],
+) -> bool:
+	row_identity = _canonical_history_json(row.get("candidate_identity"))
+	if row_identity == identity:
+		return False
+	if not _same_line_period(candidate, row.get("target_line"), row.get("period")):
+		return False
+	state = _canonical_history_json(row.get("candidate_state"))
+	if state is not None:
+		try:
+			state_data = json.loads(state)
+		except (TypeError, ValueError, json.JSONDecodeError):
+			state_data = {}
+		if candidate.item_amount is not None and state_data.get("item_amount") is not None:
+			try:
+				if float(candidate.item_amount) == float(state_data["item_amount"]):
+					return True
+			except (TypeError, ValueError):
+				pass
+		if candidate.sub_item and candidate.sub_item == state_data.get("sub_item"):
+			return True
+	return bool(candidate.reason and candidate.reason == row.get("reason"))
+
+
+def _possible_duplicate(
+	history: pd.DataFrame,
+	candidate: Any,
+	identity: str,
+	identity_status: str,
+	same_run_candidates: list[tuple[Any, str]],
+) -> bool | None:
+	if identity_status in {"replay", "blocked_existing", "state_conflict"}:
+		return False
+	if identity_status == "unknown":
+		return None
+	for _, row in history.iterrows():
+		if _candidate_overlap(candidate, identity, row):
+			return True
+	for other, other_identity in same_run_candidates:
+		if other_identity != identity and _candidate_overlap(
+			candidate,
+			identity,
+			{
+				"candidate_identity": other_identity,
+				"candidate_state": _canonical_json(_candidate_state(other)),
+				"target_line": other.target_line,
+				"period": other.period,
+				"reason": other.reason,
+			},
+		):
+			return True
+	return False
 
 
 def build_normalization_summary(
@@ -204,9 +488,13 @@ def build_normalization_summary(
 				**{field: [] for field in list_fields},
 			},
 		)
+		item_amount = candidate.get("item_amount")
+		line_delta = derive_line_delta(item_amount, candidate.get("item_effect_on_line"))
 		period_row = {
 			"period": candidate.get("period"),
-			"amount": candidate.get("adjustment_amount"),
+			"item_amount": item_amount,
+			"item_effect_on_line": candidate.get("item_effect_on_line"),
+			"line_delta": line_delta,
 			"amount_basis": candidate.get("amount_basis"),
 			"candidate_ids": [record["adjustment_id"]] if record.get("adjustment_id") else [],
 		}
@@ -221,9 +509,12 @@ def build_normalization_summary(
 			}
 		)
 		if pnl is not None:
-			period_row["reported_value"] = _reported_source_value(
+			reported_value = _reported_source_value(
 				pnl, candidate.get("target_line"), candidate.get("period")
 			)
+			period_row["reported_value"] = reported_value
+			if reported_value is not None and line_delta is not None:
+				period_row["adjusted_value"] = reported_value + line_delta
 		group["periods"].append(period_row)
 		values = {
 			"financial_assessments": (candidate.get("reason"),),
@@ -272,9 +563,14 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 		"reviewer_verdict_revise": "Reviewer requested revision",
 		"reviewer_verdict_reject": "Reviewer rejected the candidate",
 		"evidence_strength_not_strong": "Reviewer evidence strength is not strong",
-		"adjustment_amount_missing": "Candidate magnitude is not disclosed",
-		"adjustment_amount_not_finite": "Candidate magnitude is not finite",
-		"adjustment_amount_negative": "Candidate magnitude is negative",
+		"item_amount_missing": "Candidate magnitude is not disclosed",
+		"item_amount_not_positive": "Candidate magnitude is not a positive number",
+		"line_delta_underived": (
+			"Line direction is unsupported, so no signed delta can be derived"
+		),
+		"item_effect_disagreement": (
+			"Analyst and Reviewer disagree on the item's effect on the line"
+		),
 		"analyst_amount_basis_not_auto_approvable": (
 			"Analyst amount basis is not disclosed or calculated"
 		),
@@ -295,19 +591,16 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			"Group reconciliation failed or is unknown"
 		),
 		"aggregate_over_adjustment_or_unknown": (
-			"Aggregate adjustment exceeds the target or is unknown"
+			"Aggregate delta would push the line through zero or is unknown"
 		),
 		"source_target_missing_or_unknown": (
 			"Reported target value is missing or unknown"
 		),
-		"source_target_negative_or_unknown": (
-			"Reported target value is negative or unknown"
-		),
 		"individual_over_adjustment_or_unknown": (
-			"Individual adjustment exceeds the target or is unknown"
+			"Individual delta removes more than the reported line holds or is unknown"
 		),
-		"zero_target_positive_adjustment_or_unknown": (
-			"Reported target is zero or unknown with a positive candidate magnitude"
+		"zero_target_with_line_delta_or_unknown": (
+			"Reported target is zero with a nonzero signed delta or unknown"
 		),
 		"deterministic_checks_failed_or_unknown": (
 			"Deterministic checks failed or are unknown"
@@ -333,12 +626,34 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 		)
 		if group.get("sub_item"):
 			typer.echo(f"  Sub-item: {group['sub_item']}")
+
+		def period_text(row: dict[str, Any]) -> str:
+			effect = row.get("item_effect_on_line")
+			magnitude_text = (
+				f"{amount_label(row.get('item_amount'))} ({type_label(row.get('amount_basis'))}"
+				+ (f", {effect}" if effect is not None else "")
+				+ ")"
+			)
+			if "adjusted_value" in row and row.get("line_delta") is not None:
+				direction = "increases" if float(row["line_delta"]) > 0 else "decreases"
+				text = (
+					f"{type_label(row['period'])}: "
+					f"{amount_label(row.get('reported_value'), signed=True)} -> "
+					f"{amount_label(row['adjusted_value'], signed=True)} "
+					f"(normalized line {direction} by {amount_label(abs(float(row['line_delta'])))});"
+					f" magnitude {magnitude_text}"
+				)
+			else:
+				text = (
+					f"{type_label(row['period'])}="
+					f"reported {amount_label(row.get('reported_value'), signed=True)}, "
+					f"candidate magnitude {magnitude_text}"
+				)
+			return text
+
 		periods = "; ".join(
 			(
-				f"{type_label(row['period'])}="
-				f"reported {amount_label(row.get('reported_value'), signed=True)}, "
-				f"candidate magnitude {amount_label(row['amount'])} "
-				f"({type_label(row['amount_basis'])})"
+				period_text(row)
 				+ (
 					f" [{', '.join(row['candidate_ids'])}]"
 					if row.get("candidate_ids")
@@ -377,29 +692,172 @@ def _gate_conditions(
 	pnl: pd.DataFrame,
 	candidate: Any,
 	reconciliation_checks: pd.DataFrame,
+	*,
+	history: pd.DataFrame | None = None,
+	candidate_identity: str | None = None,
+	identity_status: str = "new",
+	materiality_passed: bool | None = None,
+	same_run_candidates: list[tuple[Any, str]] | None = None,
+	group_facts: dict[str, Any] | None = None,
 ) -> RiskGateConditions:
-	"""Build only facts already established by deterministic V1 code."""
+	"""Build conservative mechanical facts; no financial policy is inferred."""
+	history = history if history is not None else pd.DataFrame()
+	same_run_candidates = same_run_candidates or []
 	if reconciliation_checks.empty or "status" not in reconciliation_checks:
 		reconciliation_clear = None
 	else:
-		reconciliation_clear = bool(reconciliation_checks["status"].eq("PASS").all())
-	line_matches = _source_line_indices(pnl, candidate.target_line)
-	source_available = (
-		candidate.period in pnl.columns
-		and len(line_matches) == 1
-		and pd.notna(pnl.at[line_matches[0], candidate.period])
+		period_checks = reconciliation_checks
+		if "period" in reconciliation_checks:
+			period_checks = reconciliation_checks.loc[
+				reconciliation_checks["period"].eq(candidate.period)
+			]
+		if period_checks.empty:
+			reconciliation_clear = None
+		elif "affected_lines" not in period_checks:
+			reconciliation_clear = bool(period_checks["status"].eq("PASS").all())
+		else:
+			def affects_target(value: object) -> bool:
+				if value is None or pd.isna(value):
+					return False
+				return candidate.target_line in {
+					part.strip() for part in str(value).split(";")
+				}
+
+			relevant = period_checks.loc[
+				period_checks["affected_lines"].map(affects_target)
+			]
+			reconciliation_clear = (
+				True
+				if relevant.empty
+				else bool(relevant["status"].eq("PASS").all())
+			)
+	source_value = (
+		_reported_source_value(pnl, candidate.target_line, candidate.period)
+		if candidate.period in pnl.columns
+		else None
 	)
-	source_target_negative = None
-	if source_available:
-		source_value = pd.to_numeric(
-			pd.Series([pnl.at[line_matches[0], candidate.period]]), errors="coerce"
-		).iloc[0]
-		if pd.notna(source_value):
-			source_target_negative = bool(source_value < 0)
+	source_available = source_value is not None
+	line_delta = derive_line_delta(candidate.item_amount, candidate.item_effect_on_line)
+	possible_duplicate = _possible_duplicate(
+		history,
+		candidate,
+		candidate_identity or "",
+		identity_status,
+		same_run_candidates,
+	)
+
+	def _crosses_zero(value: float, delta: float) -> bool:
+		# Removing more than the reported line holds pushes the adjusted value
+		# through zero into the opposite sign.
+		adjusted = value + delta
+		if value > 0:
+			return adjusted <= 0
+		if value < 0:
+			return adjusted >= 0
+		return True
+
+	if source_value is None or line_delta is None:
+		individual_over_adjustment = None
+		zero_target_with_line_delta = None
+	else:
+		individual_over_adjustment = _crosses_zero(source_value, line_delta)
+		zero_target_with_line_delta = source_value == 0 and line_delta != 0
+
+	if source_value is None or line_delta is None:
+		aggregate_over_adjustment = None
+	else:
+		aggregate = 0.0
+		unknown_component = False
+		try:
+			current = history if history.empty else resolve_current_adjustments(history)
+		except (TypeError, ValueError, KeyError):
+			current = None
+		if current is None:
+			unknown_component = True
+		else:
+			existing_identities = {
+				_canonical_history_json(value)
+				for value in history.get("candidate_identity", ())
+				if _canonical_history_json(value) is not None
+			}
+			for row in current.to_dict(orient="records"):
+				if not _same_line_period(
+					candidate, row.get("target_line"), row.get("period")
+				):
+					continue
+				if (
+					identity_status in {"replay", "blocked_existing", "state_conflict"}
+					and candidate_identity
+					and _canonical_history_json(row.get("candidate_identity"))
+					== candidate_identity
+				):
+					continue
+				row_delta = derive_line_delta(
+					row.get("item_amount"), row.get("item_effect_on_line")
+				)
+				if row_delta is None:
+					unknown_component = True
+					break
+				aggregate += row_delta
+			for other, other_identity in same_run_candidates:
+				if not _same_line_period(
+					candidate, other.target_line, other.period
+				) or other_identity == candidate_identity or other_identity in existing_identities:
+					continue
+				other_delta = derive_line_delta(
+					other.item_amount, other.item_effect_on_line
+				)
+				if other_delta is None:
+					unknown_component = True
+					break
+				aggregate += other_delta
+		if unknown_component:
+			aggregate_over_adjustment = None
+		else:
+			aggregate += line_delta
+			aggregate_over_adjustment = _crosses_zero(source_value, aggregate)
+	if group_facts is None:
+		group_reconciles = (
+			True if not getattr(candidate, "group_id", None) else None
+		)
+	else:
+		group_reconciles = group_facts.get("reconciles")
+	deterministic_checks_pass: bool | None
+	if source_value is None or line_delta is None:
+		deterministic_checks_pass = None
+	else:
+		try:
+			preview = pd.DataFrame(
+				[
+					{
+						"adjustment_id": "__preview__",
+						"version": 1,
+						"target_line": candidate.target_line,
+						"period": candidate.period,
+						"item_amount": candidate.item_amount,
+						"item_effect_on_line": candidate.item_effect_on_line,
+						"line_delta": line_delta,
+						"status": "approved",
+					}
+				]
+			)
+			preview_pnl = apply_adjustments(pnl, preview)
+			preview_checks = reconcile_pnl(preview_pnl)
+			deterministic_checks_pass = not bool(
+				preview_checks["status"].eq("FAIL").any()
+			)
+		except (KeyError, TypeError, ValueError):
+			deterministic_checks_pass = False
 	return RiskGateConditions(
+		materiality_eligible=materiality_passed,
 		reconciliation_clear=reconciliation_clear,
+		possible_duplicate=possible_duplicate,
+		group_reconciles=group_reconciles,
+		aggregate_over_adjustment=aggregate_over_adjustment,
 		source_target_available=source_available,
-		source_target_negative=source_target_negative,
+		individual_over_adjustment=individual_over_adjustment,
+		zero_target_with_line_delta=zero_target_with_line_delta,
+		deterministic_checks_pass=deterministic_checks_pass,
 	)
 
 
@@ -411,8 +869,13 @@ def _run_adjustment_analysis(
 	*,
 	output_root: str | Path = "data",
 	filing: Any | None = None,
+	materiality_passed: bool | None = None,
 ) -> Path:
-	"""Run one discovery call, then exact retrieval and existing review mechanics."""
+	"""Run discovery/review and persist only deterministic safe approvals.
+
+	``materiality_passed`` is an explicit frozen integration-test fact. Live
+	callers leave it unset until an approved materiality policy exists.
+	"""
 	ticker = ticker.strip().upper()
 	output_directory = Path(output_root) / ticker / "03_output"
 	attached_filing = pnl.attrs.get("edgar_filing")
@@ -560,7 +1023,8 @@ def _run_adjustment_analysis(
 	history = _load_adjustment_history(history_path)
 	records: list[dict[str, Any]] = []
 	history_rows: list[dict[str, Any]] = []
-	next_offset = 0
+	next_display_offset = 0
+	same_run_approved: list[tuple[Any, str]] = []
 
 	for item in work_items:
 		record_start = len(records)
@@ -574,23 +1038,23 @@ def _run_adjustment_analysis(
 			raise AdjustmentAnalysisError(f"invalid evidence packet: {exc}") from exc
 
 		for candidate_number, candidate in enumerate(result.candidates):
-			adjustment_id = _next_adjustment_id(history, next_offset)
-			next_offset += 1
+			provisional_id = _next_adjustment_id(history, next_display_offset)
+			next_display_offset += 1
 			candidate_data = candidate.model_dump(mode="json")
+			base_record = {
+				"adjustment_id": provisional_id,
+				"topic": item["topic"],
+				"candidate_number": candidate_number + 1,
+				"candidate": candidate_data,
+				"final_status": "unresolved",
+				"application_status": "not_applied",
+			}
 			if not candidate.evidence_refs:
-				records.append(
-					{
-						"adjustment_id": adjustment_id,
-						"topic": item["topic"],
-						"candidate": candidate_data,
-						"final_status": "unresolved",
-						"application_status": "not_applied",
-						"error": "candidate returned no evidence references",
-					}
-				)
+				base_record["error"] = "candidate returned no evidence references"
+				records.append(base_record)
 				continue
 			try:
-				validate_evidence_refs(
+				candidate_packet_identity = validate_evidence_refs(
 					packet,
 					candidate.evidence_refs,
 					require_identity=filing is not None,
@@ -598,14 +1062,74 @@ def _run_adjustment_analysis(
 			except FilingEvidenceError as exc:
 				records.append(
 					{
-						"adjustment_id": adjustment_id,
-						"topic": item["topic"],
-						"candidate": candidate_data,
+						**base_record,
 						"final_status": "unresolved",
 						"application_status": "not_applied",
 						"error": str(exc),
 					}
 				)
+				continue
+
+			identity_error: str | None = None
+			try:
+				identity = _candidate_identity(
+					ticker, pnl, candidate, candidate_packet_identity
+				)
+			except FilingEvidenceError as exc:
+				identity = None
+				identity_error = str(exc)
+			state = _canonical_json(_candidate_state(candidate))
+			working_history = history
+			if history_rows:
+				working_history = pd.concat(
+					[history, pd.DataFrame(history_rows)], ignore_index=True
+				)
+			lookup = (
+				_history_identity_lookup(working_history, identity, state)
+				if identity is not None
+				else {"status": "unknown", "adjustment_id": None, "version": 0}
+			)
+			base_record.update(
+				{
+					"candidate_identity": identity,
+					"candidate_state": state,
+					"identity_status": lookup["status"],
+				}
+			)
+			if lookup["status"] == "unknown" and identity_error is None:
+				base_record["error"] = "candidate identity is missing or ambiguous"
+				records.append(base_record)
+				continue
+			if identity_error is not None:
+				base_record["error"] = identity_error
+			if lookup["status"] in {"replay", "blocked_existing"}:
+				latest = lookup.get("latest", {})
+				persisted_status = str(latest.get("status", ""))
+				is_replay = lookup["status"] == "replay"
+				base_record.update(
+					{
+						"adjustment_id": lookup["adjustment_id"],
+						"final_status": (
+							"approved"
+							if is_replay
+							else (
+								"rejected"
+								if persisted_status == "rejected"
+								else "human_review"
+							)
+						),
+						"application_status": "applied" if is_replay else "not_applied",
+						"replayed": is_replay,
+						"gate": {
+							"decision": latest.get("gate_decision") or "persisted",
+							"reasons": json.loads(latest.get("gate_reasons", "[]"))
+							if isinstance(latest.get("gate_reasons"), str)
+							and latest.get("gate_reasons", "").startswith("[")
+							else [],
+						},
+					}
+				)
+				records.append(base_record)
 				continue
 
 			try:
@@ -632,7 +1156,7 @@ def _run_adjustment_analysis(
 						review_metadata.setdefault(key, metadata[key])
 				review_path = save_reviewer_result(
 					ticker,
-					adjustment_id,
+					lookup["adjustment_id"] or provisional_id,
 					candidate,
 					review,
 					review_metadata,
@@ -641,9 +1165,7 @@ def _run_adjustment_analysis(
 			except ReviewerError as exc:
 				records.append(
 					{
-						"adjustment_id": adjustment_id,
-						"topic": item["topic"],
-						"candidate": candidate_data,
+						**base_record,
 						"final_status": "unresolved",
 						"application_status": "not_applied",
 						"error": str(exc),
@@ -651,42 +1173,87 @@ def _run_adjustment_analysis(
 				)
 				continue
 
+			conditions = _gate_conditions(
+				pnl,
+				candidate,
+				reconciliation_checks,
+				history=working_history,
+				candidate_identity=identity,
+				identity_status=lookup["status"],
+				materiality_passed=(
+					materiality_passed
+					if isinstance(materiality_passed, bool)
+					else None
+				),
+				same_run_candidates=same_run_approved,
+			)
 			gate = evaluate_risk_gate(
 				candidate,
 				review,
-				_gate_conditions(pnl, candidate, reconciliation_checks),
+				conditions,
 			)
-			is_approved = gate.eligible_for_auto_approval
+			is_approved = (
+				gate.eligible_for_auto_approval and lookup["status"] == "new"
+			)
+			gate_record = {
+				"decision": gate.decision,
+				"reasons": list(gate.reasons),
+			}
+			if lookup["status"] == "state_conflict":
+				gate_record = {
+					"decision": "human_review",
+					"reasons": ["candidate_state_conflict", *gate.reasons],
+				}
 			final_status = "approved" if is_approved else "human_review"
 			review_data = review.model_dump(mode="json")
+			conditions_data = dict(conditions.__dict__)
 			records.append(
 				{
-					"adjustment_id": adjustment_id,
-					"topic": item["topic"],
-					"candidate_number": candidate_number + 1,
+					**base_record,
+					"adjustment_id": lookup["adjustment_id"] or provisional_id,
 					"candidate": candidate_data,
 					"review": review_data,
 					"review_metadata": review_metadata,
 					"review_path": str(review_path),
-					"gate": {
-						"decision": gate.decision,
-						"reasons": list(gate.reasons),
+					"gate": {**gate_record, "conditions": conditions_data},
+					"materiality": {
+						"passed": materiality_passed
+						if isinstance(materiality_passed, bool)
+						else None,
+						"metrics": _materiality_metrics(pnl, candidate),
 					},
 					"final_status": final_status,
 					"application_status": ("applied" if is_approved else "not_applied"),
 				}
 			)
 			if is_approved:
+				adjustment_id = lookup["adjustment_id"] or provisional_id
+				version = (
+					1
+					if lookup["status"] == "new"
+					else int(lookup["version"]) + 1
+				)
+				metrics = _materiality_metrics(pnl, candidate)
+				# The gate blocks auto-approval without a derivable delta, so
+				# every approved row records a provable direction.
+				line_delta = derive_line_delta(
+					candidate.item_amount, candidate.item_effect_on_line
+				)
 				history_rows.append(
 					{
 						"adjustment_id": adjustment_id,
-						"version": 1,
+						"version": version,
+						"schema_version": ADJUSTMENT_SCHEMA_VERSION,
+						"candidate_identity": identity,
+						"candidate_state": state,
 						"run_id": run_id,
 						"origin": "llm",
 						"target_line": candidate_data["target_line"],
 						"sub_item": candidate_data.get("sub_item"),
 						"period": candidate_data["period"],
-						"amount": candidate_data["adjustment_amount"],
+						"item_amount": candidate_data["item_amount"],
+						"item_effect_on_line": candidate_data["item_effect_on_line"],
+						"line_delta": line_delta,
 						"status": "approved",
 						"amount_basis": candidate_data["amount_basis"],
 						"evidence_strength": review_data["evidence_strength"],
@@ -696,8 +1263,33 @@ def _run_adjustment_analysis(
 						"period_valid": review_data["period_valid"],
 						"calculation_valid": review_data["calculation_valid"],
 						"reviewer_amount_basis": review_data["amount_basis"],
-						"gate_decision": gate.decision,
-						"gate_reasons": json.dumps(gate.reasons),
+						"gate_decision": gate_record["decision"],
+						"gate_reasons": json.dumps(gate_record["reasons"]),
+						"materiality_eligible": conditions_data["materiality_eligible"],
+						"pct_revenue": metrics["pct_revenue"],
+						"pct_target_line": metrics["pct_target_line"],
+						"pct_operating_income": metrics["pct_operating_income"],
+						"possible_duplicate": conditions_data["possible_duplicate"],
+						"group_reconciles": conditions_data["group_reconciles"],
+						"aggregate_over_adjustment": conditions_data[
+							"aggregate_over_adjustment"
+						],
+						"source_target_available": conditions_data[
+							"source_target_available"
+						],
+						"individual_over_adjustment": conditions_data[
+							"individual_over_adjustment"
+						],
+						"zero_target_with_line_delta": conditions_data[
+							"zero_target_with_line_delta"
+						],
+						"deterministic_checks_pass": conditions_data[
+							"deterministic_checks_pass"
+						],
+						"reconciliation_clear": conditions_data["reconciliation_clear"],
+						"candidate_evidence_refs": _canonical_json(
+							candidate.evidence_refs
+						),
 						"analyst_model": metadata.get("model"),
 						"reviewer_model": review_metadata.get("model"),
 						"analyst_prompt_version": metadata.get("prompt_version"),
@@ -712,6 +1304,8 @@ def _run_adjustment_analysis(
 						"reason": candidate_data["reason"],
 					}
 				)
+				if is_approved:
+					same_run_approved.append((candidate, identity))
 		if item.get("topic_record") is not None:
 			candidate_records = records[record_start:]
 			item["topic_record"]["candidates"] = candidate_records
@@ -826,8 +1420,17 @@ def _run_adjustment_analysis(
 		encoding="utf-8",
 	)
 	if history_rows:
+		status_counts = {
+			status: sum(row.get("status") == status for row in history_rows)
+			for status in ("approved", "proposed")
+		}
+		status_summary = ", ".join(
+			f"{count} {status}"
+			for status, count in status_counts.items()
+			if count
+		) or "0 rows"
 		typer.echo(
-			f"Adjustment history updated ({len(history_rows)} approved rows): "
+			f"Adjustment history updated ({status_summary} rows): "
 			f"{history_path}"
 		)
 	else:

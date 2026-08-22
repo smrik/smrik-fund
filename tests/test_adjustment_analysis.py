@@ -18,12 +18,20 @@ from smrik_fund.ingestion.adjustment_analysis import (
 	run_analyst,
 	save_analyst_result,
 )
+from smrik_fund.ingestion.adjustments import (
+	apply_adjustments,
+	resolve_current_adjustments,
+)
 from smrik_fund.ingestion.discovery import DiscoveryResult, DiscoveryTopic
 from smrik_fund.ingestion.reviewer import ReviewResult
 from smrik_fund.ingestion.risk_gate import RiskGateConditions
 from smrik_fund.ingestion.statements import prepare_pnl
 from smrik_fund.main import (
+	_candidate_identity,
+	_candidate_state,
+	_canonical_json,
 	_gate_conditions,
+	_history_identity_lookup,
 	_render_normalization_summary,
 	_run_adjustment_analysis,
 	app,
@@ -188,7 +196,7 @@ class AdjustmentAnalysisTests(TestCase):
 				AnalystCandidate(
 					target_line="Research and development",
 					period="2025-06-30 (FY)",
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					reason="XBOX-related expense is not separately quantified.",
 					evidence_refs=["E1", "E2"],
@@ -259,7 +267,7 @@ class AdjustmentAnalysisTests(TestCase):
 				AnalystCandidate(
 					target_line="Research and development",
 					period="2025-06-30 (FY)",
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					reason="The filing does not separately quantify the item.",
 					evidence_refs=["E1", "E2"],
@@ -309,7 +317,8 @@ class AdjustmentAnalysisTests(TestCase):
 				AnalystCandidate(
 					target_line="Research and development",
 					period="2025-06-30 (FY)",
-					adjustment_amount=10.0,
+					item_amount=10.0,
+					item_effect_on_line="increased_line",
 					amount_basis="disclosed",
 					reason="Safe fixture.",
 					evidence_refs=["E1"],
@@ -323,6 +332,7 @@ class AdjustmentAnalysisTests(TestCase):
 			judgment_level="low",
 			calculation_valid=None,
 			target_valid=True,
+			item_effect_on_line="increased_line",
 			period_valid=True,
 			concerns=[],
 		)
@@ -333,9 +343,8 @@ class AdjustmentAnalysisTests(TestCase):
 			group_reconciles=True,
 			aggregate_over_adjustment=False,
 			source_target_available=True,
-			source_target_negative=False,
 			individual_over_adjustment=False,
-			zero_target_with_positive_adjustment=False,
+			zero_target_with_line_delta=False,
 			deterministic_checks_pass=True,
 		)
 		with TemporaryDirectory() as temporary_directory:
@@ -362,7 +371,9 @@ class AdjustmentAnalysisTests(TestCase):
 			self.assertEqual(manifest["candidates"][0]["application_status"], "applied")
 			history = pd.read_csv(root / "MSFT" / "03_output" / "adjustment_history.csv")
 			self.assertEqual(history.loc[0, "status"], "approved")
-			self.assertEqual(history.loc[0, "amount"], 10.0)
+			self.assertEqual(history.loc[0, "item_amount"], 10.0)
+			self.assertEqual(history.loc[0, "item_effect_on_line"], "increased_line")
+			self.assertEqual(history.loc[0, "line_delta"], -10.0)
 			adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
 			self.assertEqual(
 				adjusted.loc[
@@ -371,6 +382,481 @@ class AdjustmentAnalysisTests(TestCase):
 				].iloc[0],
 				90.0,
 			)
+
+	def test_frozen_approval_replays_from_persisted_history_exactly_once(self) -> None:
+		candidate = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			amount_basis="disclosed",
+			reason="Safe frozen fixture.",
+			evidence_refs=["E1"],
+		)
+		result = AnalystResult(candidates=[candidate])
+		review = ReviewResult(
+			verdict="accept",
+			evidence_strength="strong",
+			amount_basis="disclosed",
+			judgment_level="low",
+			calculation_valid=None,
+			target_valid=True,
+			item_effect_on_line="increased_line",
+			period_valid=True,
+			concerns=[],
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch(
+					"smrik_fund.main.run_discovery",
+					return_value=(make_discovery(), {"run_id": "run-approved"}),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(result, {"model": "test-model", "run_id": "run-approved"}),
+				),
+				patch("smrik_fund.main.run_reviewer", return_value=(review, {"run_id": "run-approved"})) as reviewer,
+			):
+				first_manifest_path = _run_adjustment_analysis(
+					"MSFT",
+					make_integrated_pnl(),
+					"test-model",
+					"high",
+					output_root=root,
+					filing=Filing(),
+					materiality_passed=True,
+				)
+				history_path = root / "MSFT" / "03_output" / "adjustment_history.csv"
+				first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
+				first_adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+				first_adjusted_value = first_adjusted.loc[
+					first_adjusted["label"] == "Research and development", PERIOD
+				].iloc[0]
+				first_history = pd.read_csv(history_path)
+				self.assertEqual(first_manifest["candidates"][0]["final_status"], "approved")
+				self.assertEqual(
+					first_manifest["candidates"][0]["application_status"], "applied"
+				)
+				self.assertEqual(first_adjusted_value, 90.0)
+				self.assertEqual(
+					first_history.loc[0, ["adjustment_id", "version", "status"]].tolist(),
+					["A0001", 1, "approved"],
+				)
+				self.assertEqual(first_history.loc[0, "item_amount"], 10.0)
+				self.assertEqual(first_history.loc[0, "line_delta"], -10.0)
+				history_bytes = history_path.read_bytes()
+				second_manifest_path = _run_adjustment_analysis(
+					"MSFT",
+					make_integrated_pnl(),
+					"test-model",
+					"high",
+					output_root=root,
+					filing=Filing(),
+					materiality_passed=True,
+				)
+
+			second = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+			history = pd.read_csv(history_path)
+			self.assertEqual(len(history), 1)
+			self.assertEqual(history.loc[0, "adjustment_id"], "A0001")
+			self.assertEqual(history.loc[0, "version"], 1)
+			self.assertEqual(history.loc[0, "status"], "approved")
+			self.assertEqual(history.loc[0, "item_amount"], 10.0)
+			self.assertEqual(history.loc[0, "adjustment_id"], "A0001")
+			self.assertEqual(first_manifest["candidates"][0]["identity_status"], "new")
+			self.assertEqual(second["candidates"][0]["identity_status"], "replay")
+			self.assertEqual(second["candidates"][0]["adjustment_id"], "A0001")
+			self.assertEqual(
+				second["candidates"][0]["application_status"], "applied"
+			)
+			self.assertTrue(
+				all(
+					value is not None
+					for value in first_manifest["candidates"][0]["gate"]["conditions"].values()
+				)
+			)
+			second_adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+			second_adjusted_value = second_adjusted.loc[
+				second_adjusted["label"] == "Research and development", PERIOD
+			].iloc[0]
+			self.assertEqual(first_adjusted_value, 90.0)
+			self.assertEqual(second_adjusted_value, 90.0)
+			self.assertEqual(second_adjusted_value, first_adjusted_value)
+			self.assertEqual(history_bytes, history_path.read_bytes())
+			self.assertEqual(reviewer.call_count, 1)
+
+	def test_history_identity_lookup_ignores_legacy_rows_without_guessing(self) -> None:
+		identity = _canonical_json({"identity": "stable"})
+		state = _canonical_json({"item_amount": 10.0})
+		legacy = pd.DataFrame(
+			[{"adjustment_id": "A0001", "version": 1, "status": "proposed"}]
+		)
+		# Legacy rows cannot prove direction, but they also cannot match any
+		# candidate identity, so they must not block new candidates.
+		self.assertEqual(
+			_history_identity_lookup(legacy, identity, state),
+			{"status": "new", "adjustment_id": None, "version": 0},
+		)
+
+		unparseable = pd.DataFrame(
+			[
+				{
+					"adjustment_id": "A0001",
+					"version": 1,
+					"candidate_identity": "",
+					"candidate_state": state,
+					"status": "proposed",
+				},
+			]
+		)
+		self.assertEqual(
+			_history_identity_lookup(unparseable, identity, state),
+			{"status": "new", "adjustment_id": None, "version": 0},
+		)
+
+		ambiguous = pd.DataFrame(
+			[
+				{
+					"adjustment_id": "A0001",
+					"version": 1,
+					"candidate_identity": identity,
+					"candidate_state": state,
+					"status": "approved",
+				},
+				{
+					"adjustment_id": "A0002",
+					"version": 1,
+					"candidate_identity": identity,
+					"candidate_state": state,
+					"status": "approved",
+				},
+			]
+		)
+		self.assertEqual(
+			_history_identity_lookup(ambiguous, identity, state),
+			{"status": "unknown", "adjustment_id": None, "version": 0},
+		)
+
+	def test_history_identity_lookup_uses_latest_approved_state(self) -> None:
+		identity = _canonical_json({"identity": "stable"})
+		state_v1 = _canonical_json({"item_amount": 10.0})
+		state_v2 = _canonical_json({"item_amount": 12.0})
+		history = pd.DataFrame(
+			[
+				{
+					"adjustment_id": "A0001",
+					"version": 1,
+					"candidate_identity": identity,
+					"candidate_state": state_v1,
+					"status": "approved",
+				},
+				{
+					"adjustment_id": "A0001",
+					"version": 2,
+					"candidate_identity": identity,
+					"candidate_state": state_v2,
+					"status": "rejected",
+				},
+			]
+		)
+
+		lookup = _history_identity_lookup(history, identity, state_v1)
+
+		self.assertEqual(lookup["status"], "replay")
+		self.assertEqual(lookup["version"], 1)
+		self.assertEqual(lookup["latest"]["status"], "approved")
+		self.assertEqual(
+			_history_identity_lookup(history, identity, state_v2)["status"],
+			"state_conflict",
+		)
+
+	def test_legacy_rows_do_not_block_new_candidate_matching(self) -> None:
+		pnl = make_integrated_pnl()
+		packet_identity = {
+			"metadata": {"filing_accession": "A1", "ticker": "MSFT"},
+			"items": {
+				"E1": {"source": "filing", "section": "one", "locator": "line 1"},
+			},
+		}
+		candidate = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			amount_basis="disclosed",
+			reason="Fixture.",
+			evidence_refs=["E1"],
+		)
+		identity = _candidate_identity("MSFT", pnl, candidate, packet_identity)
+		legacy_row = {
+			"adjustment_id": "A0009",
+			"version": 1,
+			"run_id": "legacy",
+			"origin": "llm",
+			"target_line": "Research and development",
+			"period": PERIOD,
+			"amount": 10.0,
+			"status": "proposed",
+		}
+		history = pd.DataFrame([legacy_row])
+
+		self.assertEqual(
+			_history_identity_lookup(
+				history, identity, _canonical_json(_candidate_state(candidate))
+			)["status"],
+			"new",
+		)
+
+	def test_distinct_exact_identities_allocate_separate_candidates(self) -> None:
+		pnl = make_integrated_pnl()
+		packet_identity = {
+			"metadata": {"filing_accession": "A1", "ticker": "MSFT"},
+			"items": {
+				"E1": {"source": "filing", "section": "one", "locator": "line 1"},
+				"E2": {"source": "filing", "section": "two", "locator": "line 2"},
+			},
+		}
+		first = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			amount_basis="disclosed",
+			sub_item="Cloud restructuring",
+			reason="First distinct item.",
+			evidence_refs=["E1"],
+		)
+		second = first.model_copy(
+			update={
+				"item_amount": 11.0,
+				"sub_item": "Gaming restructuring",
+				"reason": "Second distinct item.",
+				"evidence_refs": ["E2"],
+			}
+		)
+		first_identity = _candidate_identity("MSFT", pnl, first, packet_identity)
+		second_identity = _candidate_identity("MSFT", pnl, second, packet_identity)
+		self.assertNotEqual(first_identity, second_identity)
+		history = pd.DataFrame(
+			[
+				{
+					"adjustment_id": "A0001",
+					"version": 1,
+					"candidate_identity": first_identity,
+					"candidate_state": _canonical_json(_candidate_state(first)),
+					"status": "approved",
+				}
+			]
+		)
+		self.assertEqual(
+			_history_identity_lookup(
+				history, second_identity, _canonical_json(_candidate_state(second))
+			)["status"],
+			"new",
+		)
+
+	def test_changed_unapproved_candidate_preserves_v1_until_v2_is_approved(self) -> None:
+		base = AnalystResult(
+			candidates=[
+				AnalystCandidate(
+					target_line="Research and development",
+					period=PERIOD,
+					item_amount=10.0,
+					item_effect_on_line="increased_line",
+					amount_basis="disclosed",
+					reason="Safe frozen fixture.",
+					evidence_refs=["E1"],
+				)
+			]
+		)
+		changed = AnalystResult(
+			candidates=[base.candidates[0].model_copy(update={"item_amount": 12.0})]
+		)
+		review = ReviewResult(
+			verdict="accept",
+			evidence_strength="strong",
+			amount_basis="disclosed",
+			item_effect_on_line="increased_line",
+			judgment_level="low",
+			calculation_valid=None,
+			target_valid=True,
+			period_valid=True,
+			concerns=[],
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-approved"})),
+				patch("smrik_fund.main.run_analyst", return_value=(base, {"model": "test-model", "run_id": "run-approved"})),
+				patch("smrik_fund.main.run_reviewer", return_value=(review, {"run_id": "run-approved"})),
+			):
+				_run_adjustment_analysis(
+					"MSFT", make_integrated_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(), materiality_passed=True,
+				)
+				with (
+					patch("smrik_fund.main.run_analyst", return_value=(changed, {"model": "test-model", "run_id": "run-changed"})),
+					patch("smrik_fund.main.typer.echo") as echo,
+				):
+					manifest_path = _run_adjustment_analysis(
+						"MSFT", make_integrated_pnl(), "test-model", "high",
+						output_root=root, filing=Filing(), materiality_passed=True,
+					)
+
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			history = pd.read_csv(root / "MSFT" / "03_output" / "adjustment_history.csv")
+			self.assertEqual(len(history), 1)
+			self.assertEqual(history["adjustment_id"].tolist(), ["A0001"])
+			self.assertEqual(history["version"].tolist(), [1])
+			self.assertEqual(history["status"].tolist(), ["approved"])
+			self.assertEqual(history["item_amount"].tolist(), [10.0])
+			self.assertEqual(history["line_delta"].tolist(), [-10.0])
+			output = "\n".join(call.args[0] for call in echo.call_args_list)
+			self.assertIn("Adjustment history unchanged (0 approved rows)", output)
+			self.assertEqual(manifest["candidates"][0]["identity_status"], "state_conflict")
+			self.assertIn("candidate_state_conflict", manifest["candidates"][0]["gate"]["reasons"])
+			adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+			self.assertEqual(
+				adjusted.loc[adjusted["label"] == "Research and development", PERIOD].iloc[0],
+				90.0,
+			)
+
+			approved_v2 = history.iloc[0].copy()
+			approved_v2["version"] = 2
+			approved_v2["item_amount"] = 12.0
+			approved_v2["line_delta"] = -12.0
+			approved_v2["candidate_state"] = _canonical_json(
+				_candidate_state(changed.candidates[0])
+			)
+			approved_v2["status"] = "approved"
+			history_with_v2 = pd.concat(
+				[history, pd.DataFrame([approved_v2])], ignore_index=True
+			)
+			current = resolve_current_adjustments(history_with_v2)
+			self.assertEqual(len(current), 1)
+			self.assertEqual(current.loc[0, "version"], 2)
+			self.assertEqual(current.loc[0, "item_amount"], 12.0)
+			adjusted_v2 = apply_adjustments(make_integrated_pnl(), current)
+			self.assertEqual(
+				adjusted_v2.loc[
+					adjusted_v2["label"] == "Research and development", PERIOD
+				].iloc[0],
+				88.0,
+			)
+
+	def test_live_materiality_stays_unknown_and_fail_closed(self) -> None:
+		result = AnalystResult(
+			candidates=[
+				AnalystCandidate(
+					target_line="Research and development",
+					period=PERIOD,
+					item_amount=10.0,
+					item_effect_on_line="increased_line",
+					amount_basis="disclosed",
+					reason="Live-safe fixture.",
+					evidence_refs=["E1"],
+				)
+			]
+		)
+		review = ReviewResult(
+			verdict="accept",
+			evidence_strength="strong",
+			amount_basis="disclosed",
+			judgment_level="low",
+			calculation_valid=None,
+			target_valid=True,
+			period_valid=True,
+			concerns=[],
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-live"})),
+				patch("smrik_fund.main.run_analyst", return_value=(result, {"model": "test-model", "run_id": "run-live"})),
+				patch("smrik_fund.main.run_reviewer", return_value=(review, {"run_id": "run-live"})),
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT", make_integrated_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(),
+				)
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			self.assertIsNone(
+				manifest["candidates"][0]["gate"]["conditions"]["materiality_eligible"]
+			)
+			self.assertEqual(manifest["candidates"][0]["final_status"], "human_review")
+			self.assertFalse(
+				(root / "MSFT" / "03_output" / "adjustment_history.csv").exists()
+			)
+
+	def test_gate_builder_marks_over_target_negative_parent_derived_and_missing_cases(self) -> None:
+		pnl = make_integrated_pnl()
+		checks = pd.DataFrame(
+			[
+				{
+					"period": PERIOD,
+					"status": "FAIL",
+					"affected_lines": "Research and development; Operating income",
+				}
+			]
+		)
+		base = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			amount_basis="disclosed",
+			reason="Fixture.",
+			evidence_refs=["E1"],
+		)
+		failed_reconciliation = _gate_conditions(
+			pnl, base, checks, materiality_passed=True
+		)
+		self.assertFalse(failed_reconciliation.reconciliation_clear)
+		self.assertFalse(failed_reconciliation.aggregate_over_adjustment)
+
+		over_target = base.model_copy(update={"item_amount": 101.0})
+		over_target_conditions = _gate_conditions(
+			pnl, over_target, pd.DataFrame({"status": ["PASS"]}), materiality_passed=True
+		)
+		self.assertTrue(over_target_conditions.individual_over_adjustment)
+		self.assertTrue(over_target_conditions.aggregate_over_adjustment)
+
+		# A negative parent line alone is no longer a gate failure; only a
+		# delta that pushes the adjusted value through zero is.
+		negative_pnl = pnl.copy(deep=True)
+		negative_pnl.loc[
+			negative_pnl["label"] == "Research and development", PERIOD
+		] = -100.0
+		negative = _gate_conditions(
+			negative_pnl,
+			base,
+			pd.DataFrame({"status": ["PASS"]}),
+			materiality_passed=True,
+		)
+		self.assertFalse(negative.individual_over_adjustment)
+		self.assertFalse(negative.aggregate_over_adjustment)
+		negative_overshoot = base.model_copy(
+			update={"item_amount": 150.0, "item_effect_on_line": "decreased_line"}
+		)
+		overshoot_conditions = _gate_conditions(
+			negative_pnl,
+			negative_overshoot,
+			pd.DataFrame({"status": ["PASS"]}),
+			materiality_passed=True,
+		)
+		self.assertTrue(overshoot_conditions.individual_over_adjustment)
+
+		derived = base.model_copy(update={"target_line": "Gross profit"})
+		derived_conditions = _gate_conditions(
+			pnl, derived, pd.DataFrame({"status": ["PASS"]}), materiality_passed=True
+		)
+		self.assertFalse(derived_conditions.deterministic_checks_pass)
+
+		missing = base.model_copy(update={"period": "2099-06-30 (FY)"})
+		missing_conditions = _gate_conditions(
+			pnl, missing, pd.DataFrame({"status": ["PASS"]}), materiality_passed=True
+		)
+		self.assertFalse(missing_conditions.source_target_available)
 
 	def test_unknown_evidence_reference_fails_before_persistence(self) -> None:
 		result = AnalystResult(
@@ -449,7 +935,7 @@ class AdjustmentAnalysisTests(TestCase):
 					"target_line": "Provision for income taxes",
 					"sub_item": "Uncertain-tax-position interest",
 					"period": "2024-06-30 (FY)",
-					"adjustment_amount": 1_500_000_000.0,
+					"item_amount": 1_500_000_000.0,
 					"amount_basis": "disclosed",
 					"reason": "Disclosed tax-position interest may distort comparability.",
 					"uncertainty": "Treatment depends on the framework.",
@@ -473,7 +959,7 @@ class AdjustmentAnalysisTests(TestCase):
 					"target_line": "Provision for income taxes",
 					"sub_item": "Uncertain-tax-position interest",
 					"period": "2025-06-30 (FY)",
-					"adjustment_amount": 1_300_000_000.0,
+					"item_amount": 1_300_000_000.0,
 					"amount_basis": "disclosed",
 					"reason": "Disclosed tax-position interest may distort comparability.",
 					"uncertainty": "Treatment depends on the framework.",
@@ -494,7 +980,7 @@ class AdjustmentAnalysisTests(TestCase):
 					"target_line": "Provision for income taxes",
 					"sub_item": "Uncertain-tax-position interest",
 					"period": "2026-06-30 (FY)",
-					"adjustment_amount": 1_400_000_000.0,
+					"item_amount": 1_400_000_000.0,
 					"amount_basis": "disclosed",
 					"reason": "Disclosed tax-position interest may distort comparability.",
 					"uncertainty": "Treatment depends on the framework.",
@@ -511,7 +997,7 @@ class AdjustmentAnalysisTests(TestCase):
 		group = groups[0]
 		self.assertEqual(group["item"], "Uncertain-tax-position interest")
 		self.assertEqual(
-			[row["amount"] for row in group["periods"]],
+			[row["item_amount"] for row in group["periods"]],
 			[1_500_000_000.0, 1_300_000_000.0, 1_400_000_000.0],
 		)
 		self.assertNotIn("cross_period_observations", group)
@@ -576,7 +1062,8 @@ class AdjustmentAnalysisTests(TestCase):
 					"target_line": "Other income (expense), net",
 					"sub_item": "OpenAI investments",
 					"period": "2025-06-30 (FY)",
-					"adjustment_amount": 4_800_000_000.0,
+					"item_amount": 4_800_000_000.0,
+					"item_effect_on_line": None,
 					"amount_basis": "disclosed",
 				},
 				"review": {"verdict": "revise"},
@@ -584,7 +1071,7 @@ class AdjustmentAnalysisTests(TestCase):
 					"decision": "human_review",
 					"reasons": [
 						"reviewer_verdict_revise",
-						"source_target_negative_or_unknown",
+						"line_delta_underived",
 					],
 				},
 				"final_status": "human_review",
@@ -599,9 +1086,11 @@ class AdjustmentAnalysisTests(TestCase):
 		self.assertNotIn("Item: Investment dilution gain |", output)
 		self.assertIn("candidate magnitude $4.8bn (disclosed)", output)
 		self.assertIn("Reviewer requested revision", output)
-		self.assertIn("Reported target value is negative or unknown", output)
+		self.assertIn(
+			"Line direction is unsupported, so no signed delta can be derived", output
+		)
 		self.assertNotIn("reviewer_verdict_revise", output)
-		self.assertNotIn("source_target_negative_or_unknown", output)
+		self.assertNotIn("line_delta_underived", output)
 		self.assertIn(
 			"Reviewer verdict=revise; gate decision=human_review; "
 			"final=human_review; application=not_applied",
@@ -616,7 +1105,7 @@ class AdjustmentAnalysisTests(TestCase):
 				"target_line": "Research and development",
 				"sub_item": None,
 				"period": PERIOD,
-				"adjustment_amount": None,
+				"item_amount": None,
 				"amount_basis": "unknown",
 				"reason": "The amount is not separately disclosed.",
 				"uncertainty": "Amount unresolved.",
@@ -637,19 +1126,20 @@ class AdjustmentAnalysisTests(TestCase):
 
 		groups = build_normalization_summary([record, other])
 		self.assertEqual(len(groups), 2)
-		self.assertIsNone(groups[0]["periods"][0]["amount"])
+		self.assertIsNone(groups[0]["periods"][0]["item_amount"])
 		self.assertIn("Amount unresolved.", groups[0]["uncertainties"])
 		self.assertIn("Reviewer unavailable.", groups[0]["unresolved_issues"])
 
-	def test_signed_source_value_is_displayed_and_blocks_auto_approval(self) -> None:
+	def test_signed_source_value_displays_adjusted_arrow_without_parent_sign_block(self) -> None:
 		pnl = make_integrated_pnl()
 		pnl.loc[
 			pnl["label"] == "Other income (expense), net", PERIOD
-		] = -4_901.0
+		] = -4_901_000_000.0
 		candidate = AnalystCandidate(
 			target_line="Other income (expense), net",
 			period=PERIOD,
-			adjustment_amount=4_800.0,
+			item_amount=4_800_000_000.0,
+			item_effect_on_line="decreased_line",
 			amount_basis="disclosed",
 			reason="Disclosed loss.",
 			evidence_refs=["E1"],
@@ -663,11 +1153,22 @@ class AdjustmentAnalysisTests(TestCase):
 		}
 
 		groups = build_normalization_summary([record], pnl=pnl)
-		self.assertEqual(groups[0]["periods"][0]["reported_value"], -4_901.0)
+		period_row = groups[0]["periods"][0]
+		self.assertEqual(period_row["reported_value"], -4_901_000_000.0)
+		self.assertEqual(period_row["line_delta"], 4_800_000_000.0)
+		self.assertEqual(period_row["adjusted_value"], -101_000_000.0)
 		conditions = _gate_conditions(
 			pnl, candidate, pd.DataFrame({"status": ["PASS"]})
 		)
-		self.assertTrue(conditions.source_target_negative)
+		# The loss reduced a negative line; removing it raises the line toward
+		# zero without crossing, so the negative parent alone cannot block.
+		self.assertFalse(conditions.individual_over_adjustment)
+
+		with patch("smrik_fund.main.typer.echo") as echo:
+			_render_normalization_summary(build_normalization_summary([record], pnl=pnl))
+		output = "\n".join(call.args[0] for call in echo.call_args_list)
+		self.assertIn("-$4.9bn -> -$101.0mn", output)
+		self.assertIn("normalized line increases by $4.8bn", output)
 
 	def test_cli_prints_compact_summary_and_artifact_paths(self) -> None:
 		result = AnalystResult(
@@ -676,7 +1177,7 @@ class AdjustmentAnalysisTests(TestCase):
 					target_line="Research and development",
 					sub_item="XBOX impairment",
 					period=PERIOD,
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					calculation="No attributable amount is separately disclosed.",
 					reason="Potential unusual item.",
@@ -750,7 +1251,7 @@ class AdjustmentAnalysisTests(TestCase):
 					target_line="Research and development",
 					sub_item="XBOX impairment and related expenses",
 					period="2026-06-30 (FY)",
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					reason="The filing identifies the item but does not provide a separate amount.",
 					evidence_refs=["E1"],
@@ -759,11 +1260,11 @@ class AdjustmentAnalysisTests(TestCase):
 			]
 		)
 
-		self.assertIsNone(result.candidates[0].adjustment_amount)
+		self.assertIsNone(result.candidates[0].item_amount)
 		self.assertIsNone(
 			AnalystResult.model_validate(result.model_dump())
 			.candidates[0]
-			.adjustment_amount
+			.item_amount
 		)
 
 	def test_one_structured_call_preserves_raw_result_and_metadata(self) -> None:
@@ -772,7 +1273,7 @@ class AdjustmentAnalysisTests(TestCase):
 				AnalystCandidate(
 					target_line="Research and development",
 					period="2026-06-30 (FY)",
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					reason="The filing identifies an impairment-related item.",
 					evidence_refs=["E1"],
@@ -855,7 +1356,7 @@ class AdjustmentAnalysisTests(TestCase):
 				AnalystCandidate(
 					target_line="Research and development",
 					period="2026-06-30 (FY)",
-					adjustment_amount=None,
+					item_amount=None,
 					amount_basis="unknown",
 					reason="Amount unresolved.",
 					evidence_refs=["E1"],
@@ -883,5 +1384,5 @@ class AdjustmentAnalysisTests(TestCase):
 			/ "analysis"
 			/ "analyst_run-1.json",
 		)
-		self.assertIsNone(saved["result"]["candidates"][0]["adjustment_amount"])
+		self.assertIsNone(saved["result"]["candidates"][0]["item_amount"])
 		self.assertEqual(saved["metadata"]["reasoning_effort"], "high")

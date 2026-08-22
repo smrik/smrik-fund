@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .adjustment_analysis import AnalystCandidate
+from .adjustments import derive_line_delta
 from .reviewer import ReviewResult
 
 
@@ -24,9 +25,8 @@ class RiskGateConditions:
 	group_reconciles: bool | None = None
 	aggregate_over_adjustment: bool | None = None
 	source_target_available: bool | None = None
-	source_target_negative: bool | None = None
 	individual_over_adjustment: bool | None = None
-	zero_target_with_positive_adjustment: bool | None = None
+	zero_target_with_line_delta: bool | None = None
 	deterministic_checks_pass: bool | None = None
 
 
@@ -72,9 +72,9 @@ def evaluate_risk_gate(
 	if review.evidence_strength != "strong":
 		reasons.append("evidence_strength_not_strong")
 
-	amount = candidate.adjustment_amount
+	amount = candidate.item_amount
 	if amount is None:
-		reasons.append("adjustment_amount_missing")
+		reasons.append("item_amount_missing")
 	else:
 		try:
 			amount_number = float(amount)
@@ -82,10 +82,18 @@ def evaluate_risk_gate(
 		except (TypeError, ValueError):
 			amount_number = 0.0
 			amount_is_finite = False
-		if not amount_is_finite:
-			reasons.append("adjustment_amount_not_finite")
-		elif amount_number < 0:
-			reasons.append("adjustment_amount_negative")
+		# item_amount is a positive magnitude; the signed direction lives in
+		# item_effect_on_line, never in the amount's sign.
+		if not amount_is_finite or amount_number <= 0:
+			reasons.append("item_amount_not_positive")
+		else:
+			if derive_line_delta(amount, candidate.item_effect_on_line) is None:
+				reasons.append("line_delta_underived")
+
+	# Auto-approval requires exact direction agreement. A missing Reviewer
+	# direction is evidence-boundary uncertainty, not implicit agreement.
+	if candidate.item_effect_on_line != review.item_effect_on_line:
+		reasons.append("item_effect_disagreement")
 
 	allowed_basis = {"disclosed", "calculated"}
 	if candidate.amount_basis not in allowed_basis:
@@ -116,12 +124,10 @@ def evaluate_risk_gate(
 		reasons.append("aggregate_over_adjustment_or_unknown")
 	if conditions.source_target_available is not True:
 		reasons.append("source_target_missing_or_unknown")
-	if conditions.source_target_negative is not False:
-		reasons.append("source_target_negative_or_unknown")
 	if conditions.individual_over_adjustment is not False:
 		reasons.append("individual_over_adjustment_or_unknown")
-	if conditions.zero_target_with_positive_adjustment is not False:
-		reasons.append("zero_target_positive_adjustment_or_unknown")
+	if conditions.zero_target_with_line_delta is not False:
+		reasons.append("zero_target_with_line_delta_or_unknown")
 	if conditions.deterministic_checks_pass is not True:
 		reasons.append("deterministic_checks_failed_or_unknown")
 

@@ -65,6 +65,7 @@ def make_pnl() -> pd.DataFrame:
 def xbox_candidate(
 	*,
 	amount: float | None = None,
+	effect: str | None = None,
 	amount_basis: str = "unknown",
 	period: str = PERIOD,
 	target_line: str = "Research and development",
@@ -74,7 +75,8 @@ def xbox_candidate(
 		target_line=target_line,
 		sub_item="XBOX impairment and other related expenses",
 		period=period,
-		adjustment_amount=amount,
+		item_amount=amount,
+		item_effect_on_line=effect,
 		amount_basis=amount_basis,
 		reason="The filing identifies an Xbox impairment-related item.",
 		evidence_refs=evidence_refs or ["E1", "E2"],
@@ -120,7 +122,8 @@ class ReviewerInputTests(TestCase):
 		)
 
 		self.assertEqual(result.verdict, "accept")
-		self.assertIsNone(candidate.adjustment_amount)
+		self.assertIsNone(candidate.item_amount)
+		self.assertIsNone(candidate.item_effect_on_line)
 		self.assertEqual(result.amount_basis, "unknown")
 		self.assertIsNone(result.calculation_valid)
 		self.assertEqual(metadata["ticker"], "MSFT")
@@ -202,6 +205,7 @@ class ReviewerJudgmentContractTests(TestCase):
 					judgment_level="high",
 					calculation_valid=None,
 					target_valid=False,
+					item_effect_on_line=None,
 					period_valid=True,
 					concerns=["Target is not an exact supplied P&L line."],
 				),
@@ -215,6 +219,7 @@ class ReviewerJudgmentContractTests(TestCase):
 					judgment_level="high",
 					calculation_valid=None,
 					target_valid=True,
+					item_effect_on_line=None,
 					period_valid=False,
 					concerns=["Candidate period is absent from supplied P&L."],
 				),
@@ -228,9 +233,26 @@ class ReviewerJudgmentContractTests(TestCase):
 					judgment_level="high",
 					calculation_valid=False,
 					target_valid=True,
+					item_effect_on_line=None,
 					period_valid=True,
 					concerns=[
 						"The supplied evidence does not support a calculated amount."
+					],
+				),
+			),
+			(
+				xbox_candidate(amount=100.0, effect="decreased_line"),
+				ReviewResult(
+					verdict="revise",
+					evidence_strength="weak",
+					amount_basis="unknown",
+					judgment_level="high",
+					calculation_valid=None,
+					target_valid=True,
+					item_effect_on_line=None,
+					period_valid=True,
+					concerns=[
+						"The evidence does not establish whether the item raised or lowered R&D."
 					],
 				),
 			),
@@ -302,5 +324,6 @@ class ReviewerPersistenceTests(TestCase):
 		)
 		self.assertEqual(saved["metadata"], metadata)
 		self.assertEqual(saved["candidate"], candidate.model_dump(mode="json"))
-		self.assertIsNone(saved["candidate"]["adjustment_amount"])
+		self.assertIsNone(saved["candidate"]["item_amount"])
+		self.assertIsNone(saved["candidate"]["item_effect_on_line"])
 		self.assertEqual(saved["result"], result.model_dump(mode="json"))

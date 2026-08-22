@@ -17,8 +17,8 @@ from .filing import FilingEvidenceError, validate_evidence_refs
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-PROMPT_VERSION = "reviewer-v1"
-SCHEMA_VERSION = "reviewer-result-v1"
+PROMPT_VERSION = "reviewer-v2"
+SCHEMA_VERSION = "reviewer-result-v2"
 
 REVIEWER_PROMPT = """You are the Risk Reviewer for a financial adjustment candidate.
 Your goal is low false acceptance. Use only the one candidate, the supplied
@@ -29,16 +29,22 @@ evidence.
 The candidate target_line and period must exactly match a real supplied P&L
 line and period. Set target_valid or period_valid to false when they do not.
 Do not use fuzzy matching, invent a mapping, or silently rewrite the candidate.
-The candidate's amount and amount_basis are inputs to review, not facts to
-copy. A null amount is unresolved, never zero. A disclosed amount must be
-separately supported by the supplied evidence; do not infer a sub-item amount
-from a parent-line or year-over-year change. A suggested_amount is advisory
-only and must remain null unless the supplied evidence supports it.
+
+The candidate's amount, amount_basis, and item_effect_on_line are inputs to
+review, not facts to copy. Independently assess from the evidence whether the
+item made the reported target-line value larger or smaller, and set
+item_effect_on_line to increased_line or decreased_line only when the supplied
+evidence establishes that direction; otherwise null. Do not echo the Analyst's
+direction claim. A null amount is unresolved, never zero. A disclosed amount
+must be separately supported by the supplied evidence; do not infer a sub-item
+amount from a parent-line or year-over-year change. A suggested_amount is
+advisory only and must remain null unless the supplied evidence supports it.
 
 Return a non-accepting verdict with a concrete concern for unsupported
-evidence, a wrong target or period, an unsupported amount, or an amount-basis
-misrepresentation. Never apply an adjustment, approve it deterministically,
-start a revision loop, or retrieve more evidence.
+evidence, a wrong target or period, an unsupported amount, an amount-basis
+misrepresentation, or an unsupported effect direction. Never apply an
+adjustment, approve it deterministically, start a revision loop, or retrieve
+more evidence.
 """
 
 
@@ -53,6 +59,7 @@ class ReviewResult(BaseModel):
 	judgment_level: Literal["low", "medium", "high"]
 	calculation_valid: bool | None
 	target_valid: bool
+	item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
 	# This small extension makes the required wrong-period case explicit.
 	period_valid: bool | None = None
 	concerns: list[str]

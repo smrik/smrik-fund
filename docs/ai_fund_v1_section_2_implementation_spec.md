@@ -348,46 +348,54 @@ Do not invent a signed management-P&L convention in V1.
 Preserve EdgarTools values.
 Major expense concepts are commonly represented as positive magnitudes in the underlying XBRL/SEC data.
 
-V1 adjustment convention:
+V1 adjustment convention (implementation-corrected 2026-08-22):
 
 ```text
-adjustment amount = positive magnitude being removed
-adjusted value    = reported value - total approved adjustment
+item_amount         = positive magnitude of the item's effect on the target line
+item_effect_on_line = increased_line | decreased_line   (evidence-backed; null if unsupported)
+line_delta          = Python-derived: -item_amount when increased_line,
+                      +item_amount when decreased_line
+adjusted value      = reported value + sum of approved line deltas
 ```
 
-Example:
+The LLM never authors a signed number. Python derives and applies `line_delta`.
+
+Example for an expense removed from an expense line:
 
 ```text
-Reported SG&A      500
-Adjustment         400
-Adjusted SG&A      100
+Reported SG&A            500
+Impairment expense       400  (increased_line)
+line_delta               -400
+Adjusted SG&A            100
 ```
 
-Example for unusual revenue:
+Example for a divestiture gain netted inside an expense line:
 
 ```text
-Reported revenue  1,000
-Adjustment          100
-Adjusted revenue    900
+Reported SG&A            500
+Divestiture gain         400  (decreased_line: it reduced SG&A)
+line_delta               +400
+Adjusted SG&A            900
 ```
+
+`item_amount` and `item_effect_on_line` are independently supportable facts:
+either can be known while the other is unresolved. A signed delta exists only
+when both are proven.
 
 Preserve useful XBRL metadata when EdgarTools provides it, such as balance, calculation weight, or preferred sign.
 
-### Negative source facts
+### Direction bounds
 
-Negative source facts are possible.
-They are outside the simple auto-approval path.
-
-Rule:
+Bounds are direction-aware and use `line_delta`, not the parent line's sign:
 
 ```text
-reported target value < 0
--> never auto-approve the adjustment in V1
--> require explicit human review
+delta pushes adjusted value through zero
+-> removes more than the reported line holds
+-> human review
 ```
 
-Do not create a second sign framework until a real case requires it.
-The review UI must show the exact resulting value before approval.
+A negative reported line alone is no longer a gate failure. Legacy rows that
+store only a positive magnitude cannot prove direction and fail closed.
 
 ---
 
@@ -645,7 +653,8 @@ class AdjustmentCandidate(BaseModel):
     target_line: str
     sub_item: str | None = None
     period: str
-    adjustment_amount: float | None = None
+    item_amount: float | None = None
+    item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
     amount_basis: Literal["disclosed", "calculated", "estimated", "unknown"]
     calculation: str | None = None
     reason: str
@@ -806,10 +815,15 @@ class ReviewResult(BaseModel):
     judgment_level: Literal["low", "medium", "high"]
     calculation_valid: bool | None
     target_valid: bool
+    item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
     concerns: list[str]
     suggested_amount: float | None = None
     note: str | None = None
 ```
+
+The Reviewer independently judges `item_effect_on_line` from the evidence; it
+does not echo the Analyst. Disagreement with the Analyst fails auto-approval
+closed.
 
 ### Revision limit
 
@@ -975,17 +989,16 @@ Current adjustments are resolved as:
 
 ```text
 adjustment_history.csv
--> latest version for each adjustment_id
--> keep latest version only
--> keep status == approved
+-> keep approved rows
+-> latest approved version for each adjustment_id
 -> current adjustment DataFrame
 ```
 
 Important:
 
-> Take the latest version first. Then test the status.
+> Keep approved rows first. Then select the latest approved version per ID.
 
-Do not select the latest approved historical version.
+Do not let a newer non-approved workflow row hide the latest approved version.
 
 Example:
 
@@ -994,7 +1007,8 @@ A0001 v1 approved
 A0001 v2 rejected
 ```
 
-Current state: A0001 is absent from current adjustments.
+Current state: A0001 v1 remains in current adjustments. A later approved
+version replaces v1; the rejected row neither removes it nor stacks.
 
 ---
 
@@ -1017,7 +1031,9 @@ company
 target_line
 sub_item
 period
-amount
+item_amount
+item_effect_on_line
+line_delta
 status
 
 amount_basis
@@ -1033,7 +1049,6 @@ pct_operating_income
 target_valid
 period_valid
 calculation_valid
-source_target_negative
 possible_duplicate
 duplicate_group
 duplicate_reason
@@ -1042,6 +1057,9 @@ group_total_proposed
 group_reconciles
 line_period_total_adjustment
 aggregate_over_adjustment
+individual_over_adjustment
+zero_target_with_line_delta
+deterministic_checks_pass
 reconciliation_warning
 requires_human_review
 review_flags
@@ -1095,7 +1113,10 @@ group_id            optional string
 target_line         required reported source line for an approved adjustment
 sub_item            optional string
 period              required canonical annual period for an approved adjustment
-amount              numeric; may be blank while proposed, required before approval
+item_amount         positive numeric magnitude; may be blank while proposed,
+                    required before approval
+item_effect_on_line increased_line | decreased_line; required before approval
+line_delta          Python-derived signed value; required for approval
 status              proposed | approved | rejected
 amount_basis        disclosed | calculated | estimated | unknown
 evidence_strength   strong | medium | weak
@@ -1104,7 +1125,18 @@ reviewer_verdict    accept | revise | reject
 human_action        optional structured action
 ```
 
-Under the standard V1 convention, approved adjustment amounts are non-negative magnitudes being removed. Do not silently use a negative amount to create an alternate sign convention.
+Under the corrected V1 convention (schema version 2), approved rows store the
+auditable derivation:
+
+```text
+item_amount          positive magnitude; never negative
+item_effect_on_line  increased_line | decreased_line
+line_delta           Python-derived signed delta (-amount / +amount)
+```
+
+Do not silently use a negative item_amount to create an alternate sign
+convention. Legacy rows that store only a positive magnitude cannot prove
+direction and fail closed rather than being converted.
 
 Boolean/risk fields may be blank when a check has not run yet. Once a version reaches approval/rejection, save the relevant values that were known at that decision point.
 
@@ -1319,7 +1351,8 @@ AND no unresolved relevant reconciliation warning
 AND no possible duplicate conflict
 AND no group reconciliation problem
 AND no aggregate over-adjustment
-AND source target is not negative
+AND Analyst and Reviewer agree on item_effect_on_line
+AND the derived line delta does not push the adjusted value through zero
 AND all deterministic checks pass
 -> eligible for auto-approval
 ```
@@ -1339,52 +1372,44 @@ It is acceptable to send too many items to human review.
 
 ## 27. Over-adjustment rules
 
-### Individual adjustment
-
-If:
+Bounds are direction-aware and use `line_delta`:
 
 ```text
-adjustment amount > positive reported target value
+adjusted = reported + line_delta
 ```
 
-then:
+### Individual adjustment
+
+If the delta pushes the adjusted value through zero into the opposite sign,
+the adjustment removes more than the reported line holds:
 
 ```text
-flag
-never auto-approve
-require human review
+reported > 0 and adjusted <= 0
+or reported < 0 and adjusted >= 0
+-> flag
+-> never auto-approve
+-> require human review
 ```
 
 ### Aggregate adjustment
 
-Even if individual adjustments are each below the reported value, their sum may exceed it.
-
-Example:
-
-```text
-Reported SG&A = 100
-A0001 = 60
-A0002 = 50
-Total = 110
-```
-
-Flag at the line-period aggregate level.
-Require human review.
+The same rule applies to the combined deltas of all current approved
+adjustments for the same target line and period, plus the candidate.
 
 ### Zero target
 
 ```text
 reported value == 0
-AND adjustment > 0
+AND derived line_delta != 0
 -> human review
 ```
 
 ### Adjusted value below zero
 
-This is a risk flag, not a universal hard-invalid state.
+A zero-crossing result is a risk flag, not a universal hard-invalid state.
 Some economic lines can legitimately cross zero.
 
-If adjustments produce a below-zero result:
+If adjustments produce a zero-crossing result:
 
 ```text
 -> require human review
@@ -1392,6 +1417,7 @@ If adjustments produce a below-zero result:
 ```
 
 Do not universally prohibit it.
+A negative reported line by itself is not a gate failure.
 
 ---
 
@@ -1412,9 +1438,9 @@ def apply_adjustments(
 Core invariant:
 
 ```text
-adjusted_value
-= reported_value
-- sum(current approved adjustment amounts for target line and period)
+line_delta      = -item_amount when item_effect_on_line == increased_line
+                = +item_amount when item_effect_on_line == decreased_line
+adjusted_value  = reported_value + sum(current approved line deltas for target line and period)
 ```
 
 The function must:
@@ -1882,14 +1908,14 @@ Verify:
 - reported values unchanged;
 - only FY24 changes;
 - history not mutated;
-- formula is `reported - approved adjustment`.
+- formula is `reported + approved line_delta`.
 
 ### Test 2 — multiple adjustments same line-period
 
 ```text
 Reported SG&A FY24 = 1,000
-A0001 = 100
-A0002 = 50
+A0001 line_delta = -100
+A0002 line_delta = -50
 Expected adjusted = 850
 ```
 
@@ -1906,17 +1932,21 @@ A0001 v1 llm   proposed 400
 A0001 v2 human approved 350
 ```
 
-Expected current amount: 350.
+Expected current item amount: 350.
 History retains v1.
 
-### Test 4 — later rejection removes prior approval
+### Test 4 — later rejection does not revoke prior approval
 
 ```text
 A0001 v1 approved 400
 A0001 v2 rejected 400
 ```
 
-Expected current adjustments: A0001 absent.
+Expected current adjustments: A0001 v1 remains effective at 400.
+
+A rejected, proposed, or revise version does not revoke an approved version.
+Only a newer approved version supersedes the earlier approved version.
+Explicit withdrawal or revocation is a separate future action.
 
 ### Test 5 — aggregate over-adjustment
 
@@ -2573,7 +2603,7 @@ Do not add these unless the golden path cannot work without the smallest version
 3. Keep adjustment history separate from reported data.
 4. Use one adjustment engine for both LLM and human adjustments.
 5. Keep `adjustment_history.csv` as the adjustment source of truth.
-6. Derive current adjustments from the latest version of each adjustment ID.
+6. Derive current adjustments from the latest approved version of each adjustment ID.
 7. Apply adjustments to underlying source lines, not calculated subtotals.
 8. Recompute subtotals and analytical metrics deterministically.
 9. Use EDGAR-reported subtotals as checks where useful.
