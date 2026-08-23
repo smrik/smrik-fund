@@ -1,0 +1,61 @@
+{
+  "formatVersion": 1,
+  "pages": [
+    {
+      "id": "ooci.index",
+      "path": "index.md",
+      "title": "Annotations — smrik-fund"
+    },
+    {
+      "id": "ooci.by-file",
+      "path": "by-file.md",
+      "title": "Annotations by file"
+    },
+    {
+      "id": "ooci.by-type",
+      "path": "by-type.md",
+      "title": "Annotations by type"
+    },
+    {
+      "id": "ooci.changelog",
+      "path": "CHANGELOG.md",
+      "title": "Changelog"
+    },
+    {
+      "id": "ooci.links",
+      "path": "links.md",
+      "title": "Annotation links"
+    },
+    {
+      "id": "ooci.readme",
+      "path": "README.md",
+      "title": "Annotations — smrik-fund"
+    },
+    {
+      "id": "ooci.technical.adr.readme",
+      "path": "technical/adr/README.md",
+      "title": "Architecture decision records"
+    },
+    {
+      "id": "ooci.technical.architecture",
+      "path": "technical/architecture.md",
+      "title": "Architecture"
+    },
+    {
+      "id": "ooci.technical.onboarding",
+      "path": "technical/onboarding.md",
+      "title": "Onboarding"
+    },
+    {
+      "id": "ooci.technical.reference",
+      "path": "technical/reference.md",
+      "title": "Technical reference"
+    },
+    {
+      "id": "ooci.technical.runbook",
+      "path": "technical/runbook.md",
+      "title": "Runbook"
+    }
+  ],
+  "resources": []
+}

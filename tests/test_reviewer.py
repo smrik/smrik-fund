@@ -303,6 +303,37 @@ class ReviewerJudgmentContractTests(TestCase):
 		self.assertIsNone(round_trip.calculation_valid)
 		self.assertIsNone(round_trip.suggested_amount)
 
+	def test_legacy_review_without_normalization_fields_defaults_fail_closed(
+		self,
+	) -> None:
+		legacy = ReviewResult.model_validate(
+			{
+				"verdict": "accept",
+				"evidence_strength": "strong",
+				"amount_basis": "disclosed",
+				"judgment_level": "low",
+				"calculation_valid": None,
+				"target_valid": True,
+				"period_valid": True,
+				"concerns": [],
+			}
+		)
+
+		self.assertEqual(legacy.normalization_assessment, "uncertain")
+		self.assertEqual(legacy.recurrence_class, "uncertain")
+
+	def test_normalization_fields_round_trip(self) -> None:
+		result = ReviewResult.model_validate(
+			{
+				**accepted_xbox_result().model_dump(mode="json"),
+				"normalization_assessment": "eligible",
+				"recurrence_class": "single_period",
+			}
+		)
+
+		self.assertEqual(result.normalization_assessment, "eligible")
+		self.assertEqual(result.recurrence_class, "single_period")
+
 
 class ReviewerPersistenceTests(TestCase):
 	def test_persistence_keeps_candidate_result_metadata_and_required_path(

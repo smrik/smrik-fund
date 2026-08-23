@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "title": "Annotations — smrik-fund",
+  "formats": [
+    "hosted-wiki",
+    "html",
+    "markdown",
+    "openapi",
+    "static-site"
+  ],
+  "technicalDocuments": [
+    "adr",
+    "architecture",
+    "changelog",
+    "onboarding",
+    "readme",
+    "reference",
+    "runbook"
+  ],
+  "annotationCount": 3,
+  "fileCount": 42,
+  "diagnostics": [
+    {
+      "profile": "openapi",
+      "severity": "info",
+      "code": "catalogue-only",
+      "message": "No valid explicit operation bindings were supplied; no routes were inferred from annotation text.",
+      "file": "#/paths"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-authored-content",
+      "message": "No annotations use the explicit doc:readme role.",
+      "file": "README.md"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-authored-content",
+      "message": "No annotations use the explicit doc:architecture role.",
+      "file": "technical/architecture.md"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-authored-content",
+      "message": "No annotations use the explicit doc:onboarding role.",
+      "file": "technical/onboarding.md"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-authored-content",
+      "message": "No annotations use an explicit technical-reference role.",
+      "file": "technical/reference.md"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-authored-content",
+      "message": "No annotations use the explicit doc:runbook role.",
+      "file": "technical/runbook.md"
+    },
+    {
+      "profile": "technical",
+      "severity": "info",
+      "code": "no-changelog-entries",
+      "message": "No complete versioned change annotations were available.",
+      "file": "CHANGELOG.md"
+    }
+  ]
+}

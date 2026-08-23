@@ -3,7 +3,7 @@ import math
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import typer
@@ -585,6 +585,67 @@ def build_normalization_summary(
 	return list(groups.values())
 
 
+# Human-readable gate-reason labels shared by the run summary and review cards.
+_GATE_REASON_LABELS = {
+	"reviewer_verdict_revise": "Reviewer requested revision",
+	"reviewer_verdict_reject": "Reviewer rejected the candidate",
+	"evidence_strength_not_strong": "Reviewer evidence strength is not strong",
+	"item_amount_missing": "Candidate magnitude is not disclosed",
+	"item_amount_not_positive": "Candidate magnitude is not a positive number",
+	"line_delta_underived": (
+		"Line direction is unsupported, so no signed delta can be derived"
+	),
+	"item_effect_disagreement": (
+		"Analyst and Reviewer disagree on the item's effect on the line"
+	),
+	"analyst_amount_basis_not_auto_approvable": (
+		"Analyst amount basis is not disclosed or calculated"
+	),
+	"reviewer_amount_basis_not_auto_approvable": (
+		"Reviewer amount basis is not disclosed or calculated"
+	),
+	"amount_basis_disagreement": "Analyst and Reviewer amount bases differ",
+	"judgment_level_not_low": "Reviewer judgment level is not low",
+	"target_invalid_or_unknown": "Reviewer target line is invalid or unknown",
+	"period_invalid_or_unknown": "Reviewer period is invalid or unknown",
+	"calculation_invalid_or_unknown": "Reviewer calculation is invalid or unknown",
+	"materiality_failed_or_unknown": "Materiality is failed or unknown",
+	"normalization_eligibility_failed_or_unknown": (
+		"Not eligible for automatic normalization: Reviewer judgment or "
+		"recurrence evidence does not support removing this item"
+	),
+	"reconciliation_unresolved_or_unknown": (
+		"Source reconciliation is unresolved or unknown"
+	),
+	"possible_duplicate_or_unknown": "Possible duplicate is present or unknown",
+	"group_reconciliation_failed_or_unknown": (
+		"Group reconciliation failed or is unknown"
+	),
+	"aggregate_over_adjustment_or_unknown": (
+		"Aggregate delta would push the line through zero or is unknown"
+	),
+	"source_target_missing_or_unknown": (
+		"Reported target value is missing or unknown"
+	),
+	"individual_over_adjustment_or_unknown": (
+		"Individual delta removes more than the reported line holds or is unknown"
+	),
+	"zero_target_with_line_delta_or_unknown": (
+		"Reported target is zero with a nonzero signed delta or unknown"
+	),
+	"deterministic_checks_failed_or_unknown": (
+		"Deterministic checks failed or are unknown"
+	),
+	"candidate_state_conflict": (
+		"A different proposal state already exists for this adjustment"
+	),
+}
+
+
+def _gate_reason_label(reason: Any) -> str:
+	return _GATE_REASON_LABELS.get(str(reason), "Gate condition is not satisfied")
+
+
 def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 	def type_label(value: Any) -> str:
 		return "null" if value is None else str(value)
@@ -609,57 +670,6 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			return None
 		more = f" (+{len(values) - 1} more in manifest)" if len(values) > 1 else ""
 		return f"{type_label(values[0])}{more}"
-
-	gate_reason_labels = {
-		"reviewer_verdict_revise": "Reviewer requested revision",
-		"reviewer_verdict_reject": "Reviewer rejected the candidate",
-		"evidence_strength_not_strong": "Reviewer evidence strength is not strong",
-		"item_amount_missing": "Candidate magnitude is not disclosed",
-		"item_amount_not_positive": "Candidate magnitude is not a positive number",
-		"line_delta_underived": (
-			"Line direction is unsupported, so no signed delta can be derived"
-		),
-		"item_effect_disagreement": (
-			"Analyst and Reviewer disagree on the item's effect on the line"
-		),
-		"analyst_amount_basis_not_auto_approvable": (
-			"Analyst amount basis is not disclosed or calculated"
-		),
-		"reviewer_amount_basis_not_auto_approvable": (
-			"Reviewer amount basis is not disclosed or calculated"
-		),
-		"amount_basis_disagreement": "Analyst and Reviewer amount bases differ",
-		"judgment_level_not_low": "Reviewer judgment level is not low",
-		"target_invalid_or_unknown": "Reviewer target line is invalid or unknown",
-		"period_invalid_or_unknown": "Reviewer period is invalid or unknown",
-		"calculation_invalid_or_unknown": "Reviewer calculation is invalid or unknown",
-		"materiality_failed_or_unknown": "Materiality is failed or unknown",
-		"reconciliation_unresolved_or_unknown": (
-			"Source reconciliation is unresolved or unknown"
-		),
-		"possible_duplicate_or_unknown": "Possible duplicate is present or unknown",
-		"group_reconciliation_failed_or_unknown": (
-			"Group reconciliation failed or is unknown"
-		),
-		"aggregate_over_adjustment_or_unknown": (
-			"Aggregate delta would push the line through zero or is unknown"
-		),
-		"source_target_missing_or_unknown": (
-			"Reported target value is missing or unknown"
-		),
-		"individual_over_adjustment_or_unknown": (
-			"Individual delta removes more than the reported line holds or is unknown"
-		),
-		"zero_target_with_line_delta_or_unknown": (
-			"Reported target is zero with a nonzero signed delta or unknown"
-		),
-		"deterministic_checks_failed_or_unknown": (
-			"Deterministic checks failed or are unknown"
-		),
-	}
-
-	def gate_reason_label(reason: Any) -> str:
-		return gate_reason_labels.get(str(reason), "Gate condition is not satisfied")
 
 	def period_status(row: dict[str, Any]) -> str:
 		return (
@@ -729,7 +739,7 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			reasons = group["why_not_automatic"]
 			shown_reasons = []
 			for reason in reasons:
-				label = gate_reason_label(reason)
+				label = _gate_reason_label(reason)
 				if label not in shown_reasons:
 					shown_reasons.append(label)
 			shown_reasons = shown_reasons[:3]
@@ -737,6 +747,125 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			if len(reasons) > 3:
 				shown += f"; (+{len(reasons) - 3} more in manifest)"
 			typer.echo("  Why not automatic: " + shown)
+
+
+def _run_identity_families(
+	work_items: list[dict[str, Any]],
+	ticker: str,
+	pnl: pd.DataFrame,
+) -> dict[tuple[str, str, str], set[str]]:
+	"""Batch-collect economic families for one full run before any review.
+
+	Recurrence must not depend on candidate processing order, so every valid
+	candidate identity in the run is collected up front. Identity building is
+	deterministic and cheap; this pre-pass duplicates the per-candidate
+	evidence validation on purpose so the signal sees the whole run.
+	"""
+	families: dict[tuple[str, str, str], set[str]] = {}
+	for item in work_items:
+		packet = item.get("packet")
+		result = item.get("result")
+		if not isinstance(packet, str) or result is None:
+			continue
+		for candidate in result.candidates:
+			try:
+				packet_identity = validate_evidence_refs(
+					packet,
+					candidate.evidence_refs,
+					require_identity=True,
+				)
+				identity = _candidate_identity(
+					ticker, pnl, candidate, packet_identity
+				)
+			except FilingEvidenceError:
+				continue
+			parts = _identity_components(identity)
+			if parts is None:
+				continue
+			family = (
+				parts["company"],
+				parts["target_row_key"],
+				parts["item_key"],
+			)
+			families.setdefault(family, set()).add(parts["fiscal_period"])
+	return families
+
+
+def _multi_period_evidence(
+	history: pd.DataFrame,
+	run_families: dict[tuple[str, str, str], set[str]],
+	identity: str | None,
+) -> bool | None:
+	"""One-way deterministic recurrence signal, order-independent.
+
+	Same company + target_row_key + item_key observed in more than one distinct
+	fiscal period proves multi-period recurrence. The run is scanned as a
+	batch, so candidate ordering cannot change the result. ``False`` means
+	only "not mechanically proven recurring"; it never establishes
+	single-period status. The Reviewer's normalization judgment answers that
+	independently.
+
+	History evidence counts only rows with status ``approved``: recurrence is
+	judged against effective economic state. Rejected or proposed rows must
+	not become recurrence evidence merely by existing (policy re-checked when
+	human decisions start being persisted in M2).
+	"""
+	if not identity:
+		return None
+	parts = _identity_components(identity)
+	if parts is None:
+		return None
+	family = (parts["company"], parts["target_row_key"], parts["item_key"])
+
+	run_periods = set(run_families.get(family, ()))
+	run_periods.add(parts["fiscal_period"])
+	if len(run_periods) > 1:
+		return True
+
+	def row_family(row: dict[str, Any]) -> tuple[str, str, str]:
+		return (
+			str(row.get("company") or "").strip().upper(),
+			str(row.get("target_row_key") or ""),
+			str(row.get("item_key") or ""),
+		)
+
+	for row in history.to_dict(orient="records"):
+		if "status" in row and str(row.get("status")) != "approved":
+			continue
+		if row_family(row) != family:
+			continue
+		period = str(row.get("fiscal_period") or "")
+		if period and period != parts["fiscal_period"]:
+			return True
+	return False
+
+
+def _normalization_eligible(
+	review: Any,
+	multi_period_evidence: bool | None,
+) -> bool:
+	"""Auto-path eligibility combines Reviewer judgment with hard signal.
+
+	Recurrence alone does not decide eligibility: the Reviewer must affirm the
+	item belongs outside normalized earnings AND that it is single-period.
+	The deterministic signal can only veto (proven recurring), never approve.
+	"""
+	return bool(
+		multi_period_evidence is False
+		and getattr(review, "normalization_assessment", "uncertain") == "eligible"
+		and getattr(review, "recurrence_class", "uncertain") == "single_period"
+	)
+
+
+def _crosses_zero(value: float, delta: float) -> bool:
+	# Removing more than the reported line holds pushes the adjusted value
+	# through zero into the opposite sign.
+	adjusted = value + delta
+	if value > 0:
+		return adjusted <= 0
+	if value < 0:
+		return adjusted >= 0
+	return True
 
 
 def _gate_conditions(
@@ -748,6 +877,7 @@ def _gate_conditions(
 	candidate_identity: str | None = None,
 	identity_status: str = "new",
 	materiality_passed: bool | None = None,
+	normalization_eligible: bool | None = None,
 	same_run_candidates: list[tuple[Any, str]] | None = None,
 	group_facts: dict[str, Any] | None = None,
 ) -> RiskGateConditions:
@@ -810,16 +940,6 @@ def _gate_conditions(
 		if identity_status in {"replay", "blocked_existing", "state_conflict", "new"}
 		else None
 	)
-
-	def _crosses_zero(value: float, delta: float) -> bool:
-		# Removing more than the reported line holds pushes the adjusted value
-		# through zero into the opposite sign.
-		adjusted = value + delta
-		if value > 0:
-			return adjusted <= 0
-		if value < 0:
-			return adjusted >= 0
-		return True
 
 	if source_value is None or line_delta is None:
 		individual_over_adjustment = None
@@ -937,6 +1057,7 @@ def _gate_conditions(
 			deterministic_checks_pass = False
 	return RiskGateConditions(
 		materiality_eligible=materiality_passed,
+		normalization_eligible=normalization_eligible,
 		reconciliation_clear=reconciliation_clear,
 		possible_duplicate=possible_duplicate,
 		group_reconciles=group_reconciles,
@@ -1104,6 +1225,10 @@ def _run_adjustment_analysis(
 	if work_items:
 		typer.echo(f"Saved Analyst JSON files: {len(work_items)} (see integrated manifest)")
 
+	# Batch recurrence signal: collected before any review so candidate
+	# ordering can never change multi-period evidence.
+	run_families = _run_identity_families(work_items, ticker, pnl)
+
 	reconciliation_checks = reconcile_pnl(pnl)
 	history_path = output_directory / "adjustment_history.csv"
 	history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1270,6 +1395,9 @@ def _run_adjustment_analysis(
 				)
 				continue
 
+			multi_period_evidence = _multi_period_evidence(
+				working_history, run_families, identity
+			)
 			conditions = _gate_conditions(
 				pnl,
 				candidate,
@@ -1281,6 +1409,9 @@ def _run_adjustment_analysis(
 					materiality_passed
 					if isinstance(materiality_passed, bool)
 					else None
+				),
+				normalization_eligible=_normalization_eligible(
+					review, multi_period_evidence
 				),
 				same_run_candidates=same_run_approved,
 			)
@@ -1312,6 +1443,11 @@ def _run_adjustment_analysis(
 					"review": review_data,
 					"review_metadata": review_metadata,
 					"review_path": str(review_path),
+					"normalization": {
+						"assessment": review_data["normalization_assessment"],
+						"recurrence_class": review_data["recurrence_class"],
+						"multi_period_evidence": multi_period_evidence,
+					},
 					"gate": {**gate_record, "conditions": conditions_data},
 					"materiality": {
 						"passed": materiality_passed
@@ -1369,6 +1505,16 @@ def _run_adjustment_analysis(
 						"period_valid": review_data["period_valid"],
 						"calculation_valid": review_data["calculation_valid"],
 						"reviewer_amount_basis": review_data["amount_basis"],
+						"reviewer_normalization_assessment": review_data[
+							"normalization_assessment"
+						],
+						"reviewer_recurrence_class": review_data[
+							"recurrence_class"
+						],
+						"multi_period_evidence": multi_period_evidence,
+						# Auto-approval requires eligibility, so an override
+						# reason can only ever come from a human decision.
+						"human_override_reason": None,
 						"gate_decision": gate_record["decision"],
 						"gate_reasons": json.dumps(gate_record["reasons"]),
 						"materiality_eligible": conditions_data["materiality_eligible"],
@@ -1554,6 +1700,469 @@ def _run_adjustment_analysis(
 	typer.echo(f"Saved adjusted reconciliation: {adjusted_reconciliation_path}")
 	typer.echo(f"Saved integrated adjustment run: {manifest_path}")
 	return manifest_path
+
+
+# region Human review (M2)
+class ReviewActionError(RuntimeError):
+	"""A proposed human decision fails hard deterministic mechanics."""
+
+
+def _latest_manifest_path(ticker: str, output_root: Path) -> Path | None:
+	analysis_dir = Path(output_root) / ticker / "03_output" / "analysis"
+	candidates = list(analysis_dir.glob("adjustment_run_*.json"))
+	# Newest by modification time; run ids are not lexicographically ordered.
+	return max(candidates, key=lambda path: path.stat().st_mtime, default=None)
+
+
+def _pending_review_entries(
+	manifest: dict[str, Any],
+	history: pd.DataFrame,
+) -> list[dict[str, Any]]:
+	"""Candidates still awaiting a human decision.
+
+	Already-decided items are excluded by identity + proposal state: an
+	approved state replays as effective, and any recorded latest decision
+	(approved or rejected) suppresses re-review of the identical proposal.
+	A changed proposal for the same identity stays in the queue.
+	"""
+	pending = []
+	for record in manifest.get("candidates", []):
+		if record.get("final_status") not in {
+			"human_review",
+			"unresolved",
+			"identity_unresolved",
+		}:
+			continue
+		identity = record.get("candidate_identity")
+		state = record.get("candidate_state")
+		if identity and state:
+			lookup = _history_identity_lookup(history, identity, state)
+			if lookup["status"] in {"replay", "blocked_existing"}:
+				continue
+		pending.append(record)
+	return pending
+
+
+def _decision_context(
+	pnl: pd.DataFrame,
+	record: dict[str, Any],
+	history: pd.DataFrame,
+) -> dict[str, Any]:
+	"""Validate hard approval mechanics without applying anything.
+
+	Human approval skips Reviewer/materiality requirements but must still
+	pass target integrity, a derivable signed delta, and a clean trial
+	reconciliation of the resulting effective adjustment set.
+	"""
+	candidate = record.get("candidate") or {}
+	if not record.get("candidate_identity"):
+		raise ReviewActionError(
+			"candidate has no resolvable economic identity; cannot record approval"
+		)
+	target_line = candidate.get("target_line")
+	period = candidate.get("period")
+	try:
+		line_index = _find_line_index(pnl, target_line)
+	except (KeyError, ValueError) as exc:
+		raise ReviewActionError(
+			f"target line {target_line!r} is missing or ambiguous"
+		) from exc
+	if _is_derived_line(pnl, line_index):
+		raise ReviewActionError(
+			f"target line {target_line!r} is a derived subtotal"
+		)
+	reported = _reported_source_value(pnl, target_line, period)
+	if reported is None:
+		raise ReviewActionError(
+			f"reported value for {target_line!r} / {period!r} is unavailable"
+		)
+	line_delta = derive_line_delta(
+		candidate.get("item_amount"), candidate.get("item_effect_on_line")
+	)
+	if line_delta is None:
+		raise ReviewActionError(
+			"no derivable line delta (amount and direction must both be known)"
+		)
+
+	identity = record.get("candidate_identity")
+	state = record.get("candidate_state")
+	lookup = _history_identity_lookup(history, identity, state)
+	if lookup["status"] == "replay":
+		return {"already_effective": True}
+	if lookup["status"] == "identity_unresolved":
+		raise ReviewActionError(lookup.get("reason", "identity unresolved"))
+
+	normalization = record.get("normalization") or {}
+	override_required = (
+		normalization.get("multi_period_evidence") is True
+		or normalization.get("assessment") not in {None, "eligible"}
+		or normalization.get("recurrence_class") not in {None, "single_period"}
+	)
+	return {
+		"already_effective": False,
+		"adjustment_id": lookup.get("adjustment_id"),
+		"latest_version": lookup.get("version") or 0,
+		"reported": reported,
+		"line_delta": line_delta,
+		"crosses_zero": _crosses_zero(reported, line_delta),
+		"override_required": override_required,
+	}
+
+
+def _trial_reconciles(
+	pnl: pd.DataFrame,
+	history: pd.DataFrame,
+	row: dict[str, Any],
+) -> bool:
+	try:
+		trial = pd.concat([history, pd.DataFrame([row])], ignore_index=True)
+		current = resolve_current_adjustments(trial)
+		adjusted = apply_adjustments(pnl, current)
+		checks = reconcile_pnl(adjusted)
+	except (KeyError, TypeError, ValueError):
+		return False
+	return not bool(checks["status"].eq("FAIL").any())
+
+
+def _decision_history_row(
+	ticker: str,
+	context_or_none: dict[str, Any] | None,
+	record: dict[str, Any],
+	*,
+	status: Literal["approved", "rejected"],
+	run_id: str,
+	override_reason: str | None = None,
+	reject_reason: str | None = None,
+) -> dict[str, Any]:
+	"""Build one canonical human-decision history row."""
+	candidate = record.get("candidate") or {}
+	identity = record.get("candidate_identity")
+	state = record.get("candidate_state")
+	normalization = record.get("normalization") or {}
+	review = record.get("review") or {}
+
+	if status == "rejected":
+		if context_or_none is not None:
+			adjustment_id = context_or_none.get("adjustment_id")
+			version = int(context_or_none.get("latest_version") or 0) + 1
+		else:
+			# Identity-less rejects cannot tie to an existing item; they are
+			# recorded for audit only and never match future candidates.
+			adjustment_id = None
+			version = 1
+		if not reject_reason or not reject_reason.strip():
+			raise ReviewActionError("a rejection requires a short reason")
+	else:
+		assert context_or_none is not None
+		adjustment_id = context_or_none.get("adjustment_id")
+		version = int(context_or_none.get("latest_version") or 0) + 1
+
+	if not adjustment_id:
+		raise ReviewActionError("no adjustment id was allocated")
+
+	item_amount = candidate.get("item_amount")
+	item_effect = candidate.get("item_effect_on_line")
+	line_delta = derive_line_delta(item_amount, item_effect)
+	parts = _identity_components(identity) if identity else None
+	materiality = record.get("materiality") or {}
+	metrics = materiality.get("metrics") or {}
+
+	row = {
+		"adjustment_id": adjustment_id,
+		"version": version,
+		"schema_version": ADJUSTMENT_SCHEMA_VERSION,
+		"identity_version": IDENTITY_VERSION,
+		"candidate_identity": identity,
+		"candidate_state": state,
+		"run_id": run_id,
+		"origin": "human",
+		"company": ticker,
+		"fiscal_period": candidate.get("period"),
+		"target_row_key": parts["target_row_key"] if parts else None,
+		"target_line": candidate.get("target_line"),
+		"sub_item": candidate.get("sub_item"),
+		"period": candidate.get("period"),
+		"item_key": candidate.get("item_key"),
+		"item_amount": item_amount,
+		"item_effect_on_line": item_effect,
+		"line_delta": line_delta,
+		"status": status,
+		"amount_basis": candidate.get("amount_basis"),
+		"reviewer_verdict": review.get("verdict"),
+		"evidence_strength": review.get("evidence_strength"),
+		"judgment_level": review.get("judgment_level"),
+		"reviewer_normalization_assessment": normalization.get("assessment"),
+		"reviewer_recurrence_class": normalization.get("recurrence_class"),
+		"multi_period_evidence": normalization.get("multi_period_evidence"),
+		"gate_decision": "human_decision",
+		"gate_reasons": json.dumps(
+			[reject_reason] if reject_reason else ["human_accepted"]
+		),
+		"materiality_eligible": None,
+		"pct_revenue": metrics.get("pct_revenue"),
+		"pct_target_line": metrics.get("pct_target_line"),
+		"pct_operating_income": metrics.get("pct_operating_income"),
+		"human_override_reason": override_reason,
+		"reject_reason": reject_reason,
+		"reason": candidate.get("reason"),
+	}
+	return row
+
+
+def _append_history_row(history_path: Path, history: pd.DataFrame, row: dict[str, Any]) -> pd.DataFrame:
+	updated = (
+		pd.DataFrame([row])
+		if history.empty
+		else pd.concat([history, pd.DataFrame([row])], ignore_index=True)
+	)
+	updated.to_csv(history_path, index=False)
+	return updated
+
+
+def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFrame) -> None:
+	candidate = record.get("candidate") or {}
+	review = record.get("review") or {}
+	normalization = record.get("normalization") or {}
+	gate = record.get("gate") or {}
+	reported = _reported_source_value(
+		pnl, candidate.get("target_line"), candidate.get("period")
+	)
+	delta = derive_line_delta(
+		candidate.get("item_amount"), candidate.get("item_effect_on_line")
+	)
+	typer.echo("")
+	typer.echo(
+		f"[{index}/{total}] {record.get('adjustment_id') or '(no id)'} · "
+		f"{candidate.get('sub_item') or candidate.get('item_key')}"
+	)
+	typer.echo(
+		f"  Line: {candidate.get('target_line')} | Period: {candidate.get('period')}"
+	)
+	reported_text = (
+		f"{reported:,.0f}" if reported is not None else "n/a"
+	)
+	if delta is not None and reported is not None:
+		typer.echo(
+			f"  Proposal: remove {candidate.get('item_amount')} "
+			f"({candidate.get('item_effect_on_line')}) → delta {delta:+g} | "
+			f"{reported_text} → {reported + delta:,.0f}"
+		)
+	elif delta is None and candidate.get("item_amount") is not None:
+		typer.echo(
+			f"  Proposal: amount={candidate.get('item_amount')} but direction unknown"
+			" → no delta (cannot accept)"
+		)
+	else:
+		typer.echo("  Proposal: amount not disclosed → no delta (cannot accept)")
+	typer.echo(
+		f"  Reviewer: {review.get('verdict')} | evidence={review.get('evidence_strength')}"
+		f" | judgment={review.get('judgment_level')}"
+	)
+	concerns = review.get("concerns") or []
+	if concerns:
+		typer.echo(f"  Concerns: {concerns[0]} (+{len(concerns) - 1} more)" if len(concerns) > 1 else f"  Concerns: {concerns[0]}")
+	typer.echo(
+		f"  Eligibility: assessment={normalization.get('assessment')}"
+		f" recurrence={normalization.get('recurrence_class')}"
+		f" multi_period_signal={normalization.get('multi_period_evidence')}"
+	)
+	reasons = [
+		_gate_reason_label(reason) for reason in (gate.get("reasons") or [])
+	]
+	if reasons:
+		shown = "; ".join(dict.fromkeys(reasons))
+		typer.echo(f"  Why not automatic: {shown}")
+	if record.get("final_status") == "identity_unresolved":
+		typer.echo("  IDENTITY UNRESOLVED — this MVP can only skip this item.")
+
+
+def _rebuild_adjusted_outputs(ticker: str, output_root: Path, pnl: pd.DataFrame) -> None:
+	output_directory = output_root / ticker / "03_output"
+	history = _load_adjustment_history(output_directory / "adjustment_history.csv")
+	try:
+		current = resolve_current_adjustments(history)
+		adjusted = apply_adjustments(pnl, current)
+		adjusted_checks = reconcile_pnl(adjusted)
+	except (KeyError, TypeError, ValueError) as exc:
+		typer.echo(f"Rebuild failed: {exc}", err=True)
+		return
+	adjusted_path = output_directory / "adjusted_pnl.csv"
+	adjusted.to_csv(adjusted_path, index=False)
+	checks_path = output_directory / "adjusted_reconciliation_checks.csv"
+	adjusted_checks.to_csv(checks_path, index=False)
+
+	summary_passed = int((adjusted_checks["status"] == "PASS").sum())
+	summary_failed = int((adjusted_checks["status"] == "FAIL").sum())
+	typer.echo("")
+	typer.echo(
+		f"Adjusted P&L rebuilt ({current.shape[0]} effective adjustments): "
+		f"{adjusted_path} | reconciliation {summary_passed} pass / {summary_failed} fail"
+	)
+	for row in current.to_dict(orient="records"):
+		adjusted_value = _reported_source_value(
+			adjusted, row.get("target_line"), row.get("period")
+		)
+		reported_value = _reported_source_value(
+			pnl, row.get("target_line"), row.get("period")
+		)
+		typer.echo(
+			f"  {row['adjustment_id']} v{int(row['version'])} · "
+			f"{row.get('target_line')} {row.get('period')} · "
+			f"{reported_value:,.0f} → {adjusted_value:,.0f} "
+			f"(delta {float(row['line_delta']):+g})"
+		)
+
+
+def _run_review_session(ticker: str, output_root: Path) -> None:
+	manifest_path = _latest_manifest_path(ticker, output_root)
+	if manifest_path is None:
+		typer.echo(f"No analysis runs found for {ticker}. Run analyze first.")
+		raise typer.Exit(1)
+	manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+	pnl = load_analytical_pnl(ticker, str(output_root))
+	history_path = output_root / ticker / "03_output" / "adjustment_history.csv"
+	history = _load_adjustment_history(history_path)
+
+
+	queue = _pending_review_entries(manifest, history)
+	if not queue:
+		typer.echo("Nothing pending human review.")
+		_rebuild_adjusted_outputs(ticker, output_root, pnl)
+		return
+
+	typer.echo(
+		f"{len(queue)} candidate(s) pending review from run "
+		f"{manifest.get('metadata', {}).get('run_id', '?')}"
+	)
+	decisions = 0
+	for index, record in enumerate(queue, start=1):
+		_review_card(index, len(queue), record, pnl)
+		action = typer.prompt(
+			"[a]ccept / [r]eject / [e]dit amount / [s]kip / [q]uit",
+			type=str,
+			default="s",
+		).strip().lower()
+
+		if action == "q":
+			break
+		if action == "s":
+			typer.echo("Skipped.")
+			continue
+		if action not in {"a", "r", "e"}:
+			typer.echo("Unknown action; skipped.")
+			continue
+
+		run_id = f"human-{_new_run_id()}"
+		try:
+			if action == "r":
+				reason = typer.prompt("Short rejection reason")
+				context = None
+				identity = record.get("candidate_identity")
+				if identity:
+					state = record.get("candidate_state")
+					lookup = _history_identity_lookup(history, identity, state or "")
+					if lookup["status"] != "new":
+						context = {
+							"adjustment_id": lookup.get("adjustment_id"),
+							"latest_version": lookup.get("version") or 0,
+						}
+				if context is None:
+					context = {
+						"adjustment_id": _next_adjustment_id(history),
+						"latest_version": 0,
+					}
+				elif not context.get("adjustment_id"):
+					context["adjustment_id"] = _next_adjustment_id(history)
+				row = _decision_history_row(
+					ticker,
+					context,
+					record,
+					status="rejected",
+					run_id=run_id,
+					reject_reason=reason.strip(),
+				)
+				typer.echo(f"Rejected as {row['adjustment_id']} v{row['version']}.")
+			else:
+				context = _decision_context(pnl, record, history)
+				if context.get("already_effective"):
+					typer.echo("Already approved and effective. Nothing to do.")
+					continue
+				if not context.get("adjustment_id"):
+					context["adjustment_id"] = _next_adjustment_id(history)
+				note: str | None = None
+				if context["override_required"]:
+					note = typer.prompt(
+						"Not auto-eligible. Short override reason (required)"
+					).strip()
+					if not note:
+						typer.echo("No override reason given; skipped.")
+						continue
+				if action == "e":
+					new_amount_text = typer.prompt("New positive amount").strip()
+					try:
+						new_amount = float(new_amount_text)
+					except ValueError:
+						typer.echo("Not a number; skipped.")
+						continue
+					record = {
+						**record,
+						"candidate": {
+							**record["candidate"],
+							"item_amount": new_amount,
+						},
+					}
+					context = _decision_context(pnl, record, history)
+					if context.get("already_effective"):
+						typer.echo("Edited amount matches what is already effective.")
+						continue
+					if not context.get("adjustment_id"):
+						context["adjustment_id"] = _next_adjustment_id(history)
+				if context["crosses_zero"]:
+					confirm = typer.prompt(
+						"WARNING: removes more than the reported line holds. Type yes to confirm",
+						default="no",
+					).strip().lower()
+					if confirm != "yes":
+						typer.echo("Not confirmed; skipped.")
+						continue
+
+				row = _decision_history_row(
+					ticker,
+					context,
+					record,
+					status="approved",
+					run_id=run_id,
+					override_reason=note,
+				)
+				if not _trial_reconciles(pnl, history, row):
+					raise ReviewActionError(
+						"approval would break adjusted reconciliation; refused"
+					)
+				label = "Approved" if action == "a" else "Approved edited amount"
+				typer.echo(
+					f"{label} as {row['adjustment_id']} v{row['version']}."
+				)
+
+			history = _append_history_row(history_path, history, row)
+			decisions += 1
+		except ReviewActionError as exc:
+			typer.echo(f"Refused: {exc}")
+
+	typer.echo(f"Session complete ({decisions} decision(s) recorded).")
+	if decisions:
+		_rebuild_adjusted_outputs(ticker, output_root, pnl)
+
+
+@app.command()
+def review(
+	ticker: str,
+	output_root: Path = typer.Option(
+		default=Path("data"),
+		help="Workspace root containing data outputs.",
+	),
+) -> None:
+	"""Interactive human review of pending normalization candidates."""
+	_run_review_session(ticker.strip().upper(), output_root)
 
 
 @app.command()

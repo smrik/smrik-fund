@@ -27,11 +27,14 @@ from smrik_fund.ingestion.reviewer import ReviewResult
 from smrik_fund.ingestion.risk_gate import RiskGateConditions
 from smrik_fund.ingestion.statements import prepare_pnl
 from smrik_fund.main import (
+	IDENTITY_VERSION,
 	_candidate_identity,
 	_candidate_state,
 	_canonical_json,
 	_gate_conditions,
 	_history_identity_lookup,
+	_multi_period_evidence,
+	_normalization_eligible,
 	_render_normalization_summary,
 	_run_adjustment_analysis,
 	app,
@@ -339,6 +342,7 @@ class AdjustmentAnalysisTests(TestCase):
 		)
 		conditions = RiskGateConditions(
 			materiality_eligible=True,
+			normalization_eligible=True,
 			reconciliation_clear=True,
 			possible_duplicate=False,
 			group_reconciles=True,
@@ -404,6 +408,8 @@ class AdjustmentAnalysisTests(TestCase):
 			calculation_valid=None,
 			target_valid=True,
 			item_effect_on_line="increased_line",
+			normalization_assessment="eligible",
+			recurrence_class="single_period",
 			period_valid=True,
 			concerns=[],
 		)
@@ -709,6 +715,8 @@ class AdjustmentAnalysisTests(TestCase):
 			judgment_level="low",
 			calculation_valid=None,
 			target_valid=True,
+			normalization_assessment="eligible",
+			recurrence_class="single_period",
 			period_valid=True,
 			concerns=[],
 		)
@@ -901,25 +909,30 @@ class AdjustmentAnalysisTests(TestCase):
 				)
 			]
 		)
-		with (
-			patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
-			patch(
-				"smrik_fund.main.Path.read_text",
-				return_value=(
-					"### E1\nSource: filing source\nSection: filing section\n"
-					"Locator: line 1\n\n> Filing excerpt."
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
+				patch(
+					"smrik_fund.main.Path.read_text",
+					return_value=(
+						"### E1\nSource: filing source\nSection: filing section\n"
+						"Locator: line 1\n\n> Filing excerpt."
+					),
 				),
-			),
-			patch(
-				"smrik_fund.main.run_analyst",
-				return_value=(result, {"model": "test-model"}),
-			),
-		):
-			manifest_path = _run_adjustment_analysis(
-				"MSFT", make_pnl(), "test-model", "high", filing=Filing()
-			)
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(result, {"model": "test-model"}),
+				),
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT", make_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(),
+				)
+				# read_text is patched on Path inside main; use open() here.
+				with open(manifest_path, encoding="utf-8") as handle:
+					manifest = json.load(handle)
 
-		manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 		self.assertEqual(manifest["candidates"][0]["final_status"], "unresolved")
 
 	def test_empty_evidence_references_fail_before_persistence_or_review(self) -> None:
@@ -934,27 +947,31 @@ class AdjustmentAnalysisTests(TestCase):
 				)
 			]
 		)
-		with (
-			patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
-			patch(
-				"smrik_fund.main.Path.read_text",
-				return_value=(
-					"### E1\nSource: filing source\nSection: filing section\n"
-					"Locator: line 1\n\n> Filing excerpt."
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
+				patch(
+					"smrik_fund.main.Path.read_text",
+					return_value=(
+						"### E1\nSource: filing source\nSection: filing section\n"
+						"Locator: line 1\n\n> Filing excerpt."
+					),
 				),
-			),
-			patch(
-				"smrik_fund.main.run_analyst",
-				return_value=(result, {"model": "test-model"}),
-			),
-			patch("smrik_fund.main.run_reviewer") as run_reviewer,
-		):
-			manifest_path = _run_adjustment_analysis(
-				"MSFT", make_pnl(), "test-model", "high", filing=Filing()
-			)
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(result, {"model": "test-model"}),
+				),
+				patch("smrik_fund.main.run_reviewer") as run_reviewer,
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT", make_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(),
+				)
+				with open(manifest_path, encoding="utf-8") as handle:
+					manifest = json.load(handle)
 
 		run_reviewer.assert_not_called()
-		manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 		self.assertEqual(manifest["candidates"][0]["final_status"], "unresolved")
 
 	def test_normalization_summary_groups_periods_and_preserves_states(self) -> None:
@@ -1218,38 +1235,45 @@ class AdjustmentAnalysisTests(TestCase):
 				)
 			]
 		)
-		with (
-			patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
-			patch(
-				"smrik_fund.main.run_analyst",
-				return_value=(
-					result,
-					{"model": "test-model", "reasoning_effort": "low"},
-				),
-			),
-			patch(
-				"smrik_fund.main.run_reviewer",
-				return_value=(
-					ReviewResult(
-						verdict="revise",
-						evidence_strength="weak",
-						amount_basis="unknown",
-						judgment_level="high",
-						calculation_valid=None,
-						target_valid=True,
-						period_valid=True,
-						concerns=["Amount unresolved."],
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-1"})),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(
+						result,
+						{"model": "test-model", "reasoning_effort": "low"},
 					),
-					{"run_id": "run-1"},
 				),
-			),
-			patch(
-				"smrik_fund.main.save_reviewer_result",
-				return_value=Path("review.json"),
-			),
-			patch("smrik_fund.main.typer.echo") as echo,
-		):
-			_run_adjustment_analysis("MSFT", make_pnl(), "test-model", "low", filing=Filing())
+				patch(
+					"smrik_fund.main.run_reviewer",
+					return_value=(
+						ReviewResult(
+							verdict="revise",
+							evidence_strength="weak",
+							amount_basis="unknown",
+							judgment_level="high",
+							calculation_valid=None,
+							target_valid=True,
+							period_valid=True,
+							concerns=["Amount unresolved."],
+						),
+						{"run_id": "run-1"},
+					),
+				),
+				patch(
+					"smrik_fund.main.save_reviewer_result",
+					return_value=Path("review.json"),
+				),
+				patch("smrik_fund.main.typer.echo") as echo,
+			):
+				# output_root must stay inside the temp dir; writing to the
+				# real data/ tree corrupts the latest-manifest selection.
+				_run_adjustment_analysis(
+					"MSFT", make_pnl(), "test-model", "low",
+					output_root=root, filing=Filing(),
+				)
 
 		output = "\n".join(call.args[0] for call in echo.call_args_list)
 		self.assertIn("Normalization summary", output)
@@ -1418,3 +1442,371 @@ class AdjustmentAnalysisTests(TestCase):
 		)
 		self.assertIsNone(saved["result"]["candidates"][0]["item_amount"])
 		self.assertEqual(saved["metadata"]["reasoning_effort"], "high")
+
+class MultiPeriodEvidenceUnitTests(TestCase):
+	FAMILY = {
+		"company": "MSFT",
+		"target_row_key": "standard_concept:IncomeTaxes",
+		"item_key": "utp-interest",
+	}
+
+	def _identity(self, period: str, key: str = "utp-interest") -> str:
+		return _canonical_json(
+			{
+				"identity_version": IDENTITY_VERSION,
+				"company": "MSFT",
+				"fiscal_period": period,
+				"target_row_key": "standard_concept:IncomeTaxes",
+				"item_key": key,
+			}
+		)
+
+	def _history_row(self, period: str, status: str = "approved", key: str = "utp-interest") -> dict:
+		return {
+			"company": "MSFT",
+			"target_row_key": "standard_concept:IncomeTaxes",
+			"item_key": key,
+			"fiscal_period": period,
+			"status": status,
+		}
+
+	def test_same_key_in_two_history_periods_proves_recurrence(self) -> None:
+		history = pd.DataFrame(
+			[
+				self._history_row("2024-06-30 (FY)"),
+				self._history_row("2025-06-30 (FY)"),
+			]
+		)
+
+		self.assertTrue(
+			_multi_period_evidence(
+				history, {}, self._identity("2026-06-30 (FY)")
+			)
+		)
+
+	def test_batch_run_family_proves_recurrence_for_every_member(self) -> None:
+		run_families = {
+			("MSFT", "standard_concept:IncomeTaxes", "utp-interest"): {
+				"2024-06-30 (FY)",
+				"2025-06-30 (FY)",
+				"2026-06-30 (FY)",
+			}
+		}
+
+		for period in (
+			"2024-06-30 (FY)",
+			"2025-06-30 (FY)",
+			"2026-06-30 (FY)",
+		):
+			with self.subTest(period=period):
+				self.assertTrue(
+					_multi_period_evidence(
+						pd.DataFrame(), run_families, self._identity(period)
+					)
+				)
+
+	def test_rejected_history_row_is_not_recurrence_evidence(self) -> None:
+		history = pd.DataFrame(
+			[self._history_row("2024-06-30 (FY)", status="rejected")]
+		)
+
+		self.assertFalse(
+			_multi_period_evidence(
+				history, {}, self._identity("2025-06-30 (FY)")
+			)
+		)
+
+	def test_different_keys_across_periods_are_not_recurrence_evidence(self) -> None:
+		history = pd.DataFrame([self._history_row("2024-06-30 (FY)")])
+
+		# One-way signal: no exact repeated key proves nothing about recurrence.
+		self.assertFalse(
+			_multi_period_evidence(
+				history,
+				{},
+				self._identity(
+					"2025-06-30 (FY)", "openai-investment-dilution-gain"
+				),
+			)
+		)
+
+	def test_missing_identity_returns_unknown_not_false(self) -> None:
+		self.assertIsNone(_multi_period_evidence(pd.DataFrame(), {}, None))
+		self.assertIsNone(
+			_multi_period_evidence(pd.DataFrame(), {}, _canonical_json({"other": 1}))
+		)
+
+
+class NormalizationEligibilityUnitTests(TestCase):
+	def _review(self, assessment: str, recurrence: str) -> ReviewResult:
+		return ReviewResult(
+			verdict="accept",
+			evidence_strength="strong",
+			amount_basis="disclosed",
+			judgment_level="low",
+			calculation_valid=None,
+			target_valid=True,
+			period_valid=True,
+			concerns=[],
+			normalization_assessment=assessment,
+			recurrence_class=recurrence,
+		)
+
+	def test_eligible_requires_judgment_and_single_period_and_no_signal(self) -> None:
+		self.assertTrue(
+			_normalization_eligible(
+				self._review("eligible", "single_period"), False
+			)
+		)
+		# Proven recurring vetoes even an eligible judgment.
+		self.assertFalse(
+			_normalization_eligible(
+				self._review("eligible", "single_period"), True
+			)
+		)
+		# Uncertain signal can never approve.
+		self.assertFalse(
+			_normalization_eligible(
+				self._review("eligible", "single_period"), None
+			)
+		)
+		# A one-period item is not automatically normalizable.
+		self.assertFalse(
+			_normalization_eligible(
+				self._review("not_eligible", "single_period"), False
+			)
+		)
+		self.assertFalse(
+			_normalization_eligible(
+				self._review("eligible", "recurring_volatile"), False
+			)
+		)
+
+def make_two_period_pnl() -> pd.DataFrame:
+	period_2025 = "2025-06-30 (FY)"
+	period_2024 = "2024-06-30 (FY)"
+	rows = [
+		("Revenue", "Revenue", 1000.0, 900.0),
+		("Cost of revenue", "CostOfGoodsAndServicesSold", 600.0, 540.0),
+		("Gross profit", "GrossProfit", 400.0, 360.0),
+		("Research and development", "ResearchAndDevelopmentExpenses", 100.0, 90.0),
+		("Sales and marketing", "SellingGeneralAndAdminExpenses", 50.0, 45.0),
+		("General and administrative", "SellingGeneralAndAdminExpenses", 50.0, 45.0),
+		("Operating income", "OperatingIncomeLoss", 200.0, 180.0),
+		("Other income (expense), net", "NonoperatingIncomeExpense", 10.0, -5.0),
+		("Income before income taxes", "PretaxIncomeLoss", 210.0, 175.0),
+		("Provision for income taxes", "IncomeTaxes", 42.0, 35.0),
+		("Net income", "NetIncome", 168.0, 140.0),
+	]
+	raw = pd.DataFrame(
+		{
+			"concept": [f"us-gaap_{concept}" for _, concept, _, _ in rows],
+			"label": [label for label, _, _, _ in rows],
+			"standard_concept": [concept for _, concept, _, _ in rows],
+			period_2025: [v1 for _, _, v1, _ in rows],
+			period_2024: [v2 for _, _, _, v2 in rows],
+		}
+	)
+	return prepare_pnl(raw, years=2)
+
+
+def utp_candidate(period: str) -> AnalystCandidate:
+	return AnalystCandidate(
+		target_line="Provision for income taxes",
+		sub_item="Uncertain-tax-position interest",
+		period=period,
+		item_amount=1.4,
+		item_effect_on_line="increased_line",
+		item_key="uncertain-tax-position-interest",
+		amount_basis="disclosed",
+		reason="Disclosed UTP interest expense.",
+		evidence_refs=["E1"],
+	)
+
+
+def eligible_utp_review() -> ReviewResult:
+	return ReviewResult(
+		verdict="accept",
+		evidence_strength="strong",
+		amount_basis="disclosed",
+		judgment_level="low",
+		calculation_valid=None,
+		target_valid=True,
+		item_effect_on_line="increased_line",
+		normalization_assessment="eligible",
+		recurrence_class="single_period",
+		period_valid=True,
+		concerns=[],
+	)
+
+
+class CrossPeriodRecursionRegressionTests(TestCase):
+	def test_same_key_in_prior_period_blocks_auto_approval_despite_eligible_review(
+		self,
+	) -> None:
+		# The motivating UTP case: even a Reviewer that judges the item
+		# eligible and single-period cannot auto-approve once the same
+		# economic key is already approved in another fiscal period.
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			pnl = make_two_period_pnl()
+			with (
+				patch(
+					"smrik_fund.main.run_discovery",
+					return_value=(make_discovery(), {"run_id": "run-p1"}),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(
+						AnalystResult(candidates=[utp_candidate("2025-06-30 (FY)")]),
+						{"model": "test-model", "run_id": "run-p1"},
+					),
+				),
+				patch(
+					"smrik_fund.main.run_reviewer",
+					return_value=(eligible_utp_review(), {"run_id": "run-p1"}),
+				),
+			):
+				first_manifest = json.loads(
+					_run_adjustment_analysis(
+						"MSFT", pnl, "test-model", "high",
+						output_root=root, filing=Filing(),
+						materiality_passed=True,
+					).read_text(encoding="utf-8")
+				)
+
+			self.assertEqual(
+				first_manifest["candidates"][0]["final_status"], "approved"
+			)
+			history_path = root / "MSFT" / "03_output" / "adjustment_history.csv"
+			self.assertEqual(len(pd.read_csv(history_path)), 1)
+
+			with (
+				patch(
+					"smrik_fund.main.run_discovery",
+					return_value=(make_discovery(), {"run_id": "run-p2"}),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(
+						AnalystResult(candidates=[utp_candidate("2024-06-30 (FY)")]),
+						{"model": "test-model", "run_id": "run-p2"},
+					),
+				),
+				patch(
+					"smrik_fund.main.run_reviewer",
+					return_value=(eligible_utp_review(), {"run_id": "run-p2"}),
+				),
+			):
+				second_manifest = json.loads(
+					_run_adjustment_analysis(
+						"MSFT", pnl, "test-model", "high",
+						output_root=root, filing=Filing(),
+						materiality_passed=True,
+					).read_text(encoding="utf-8")
+				)
+
+			candidate = second_manifest["candidates"][0]
+			self.assertEqual(candidate["final_status"], "human_review")
+			self.assertTrue(
+				candidate["normalization"]["multi_period_evidence"]
+			)
+			self.assertIn(
+				"normalization_eligibility_failed_or_unknown",
+				candidate["gate"]["reasons"],
+			)
+			# The prior approval stays effective; nothing new was applied.
+			self.assertEqual(len(pd.read_csv(history_path)), 1)
+			adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+			taxes = adjusted.loc[
+				adjusted["label"] == "Provision for income taxes"
+			].iloc[0]
+			self.assertEqual(taxes["2025-06-30 (FY)"], 40.6)
+			self.assertEqual(taxes["2024-06-30 (FY)"], 35.0)
+
+def make_three_period_pnl() -> pd.DataFrame:
+	rows = [
+		("Revenue", "Revenue", 1000.0, 900.0, 800.0),
+		("Cost of revenue", "CostOfGoodsAndServicesSold", 600.0, 540.0, 480.0),
+		("Gross profit", "GrossProfit", 400.0, 360.0, 320.0),
+		("Research and development", "ResearchAndDevelopmentExpenses", 100.0, 90.0, 80.0),
+		("Sales and marketing", "SellingGeneralAndAdminExpenses", 50.0, 45.0, 40.0),
+		("General and administrative", "SellingGeneralAndAdminExpenses", 50.0, 45.0, 40.0),
+		("Operating income", "OperatingIncomeLoss", 200.0, 180.0, 160.0),
+		("Other income (expense), net", "NonoperatingIncomeExpense", 10.0, -5.0, -3.0),
+		("Income before income taxes", "PretaxIncomeLoss", 210.0, 175.0, 157.0),
+		("Provision for income taxes", "IncomeTaxes", 42.0, 35.0, 31.0),
+		("Net income", "NetIncome", 168.0, 140.0, 126.0),
+	]
+	periods = ("2025-06-30 (FY)", "2024-06-30 (FY)", "2023-06-30 (FY)")
+	raw = pd.DataFrame(
+		{
+			"concept": [f"us-gaap_{concept}" for _, concept, _, _, _ in rows],
+			"label": [label for label, _, _, _, _ in rows],
+			"standard_concept": [concept for _, concept, _, _, _ in rows],
+			periods[0]: [v1 for _, _, v1, _, _ in rows],
+			periods[1]: [v2 for _, _, _, v2, _ in rows],
+			periods[2]: [v3 for _, _, _, _, v3 in rows],
+		}
+	)
+	return prepare_pnl(raw, years=3)
+
+
+class RecurrenceOrderIndependenceTests(TestCase):
+	def _run_three_utp(
+		self,
+		root: Path,
+		order: list[str],
+	) -> list[tuple[str, str, bool]]:
+		candidates = [utp_candidate(period) for period in order]
+		with (
+			patch(
+				"smrik_fund.main.run_discovery",
+				return_value=(make_discovery(), {"run_id": "run-order"}),
+			),
+			patch(
+				"smrik_fund.main.run_analyst",
+				return_value=(
+					AnalystResult(candidates=candidates),
+					{"model": "test-model", "run_id": "run-order"},
+				),
+			),
+			patch(
+				"smrik_fund.main.run_reviewer",
+				return_value=(eligible_utp_review(), {"run_id": "run-order"}),
+			),
+		):
+			manifest_path = _run_adjustment_analysis(
+				"MSFT",
+				make_three_period_pnl(),
+				"test-model",
+				"high",
+				output_root=root,
+				filing=Filing(),
+				materiality_passed=True,
+			)
+
+		manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+		results = [
+			(
+				record["candidate"]["period"],
+				record["final_status"],
+				record["normalization"]["multi_period_evidence"],
+			)
+			for record in manifest["candidates"]
+		]
+		# Manifest rows follow processing order; compare per period.
+		return sorted(results)
+
+	def test_candidate_order_cannot_change_recurrence_or_gate_outcome(self) -> None:
+		periods = ["2025-06-30 (FY)", "2024-06-30 (FY)", "2023-06-30 (FY)"]
+		with TemporaryDirectory() as first_dir, TemporaryDirectory() as second_dir:
+			first = self._run_three_utp(Path(first_dir), periods)
+			second = self._run_three_utp(Path(second_dir), list(reversed(periods)))
+
+		# Identical MPE values and identical gate outcomes regardless of
+		# which candidate the pipeline happened to process first.
+		self.assertEqual(first, second)
+		self.assertEqual(len(first), 3)
+		self.assertTrue(all(mpe is True for _, _, mpe in first))
+		self.assertEqual({status for _, status, _ in first}, {"human_review"})

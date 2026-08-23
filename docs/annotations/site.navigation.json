@@ -1,0 +1,64 @@
+{
+  "formatVersion": 1,
+  "items": [
+    {
+      "title": "Overview",
+      "path": "index.md",
+      "depth": 0
+    },
+    {
+      "title": "By type",
+      "path": "by-type.md",
+      "depth": 0
+    },
+    {
+      "title": "By file",
+      "path": "by-file.md",
+      "depth": 0
+    },
+    {
+      "title": "Links",
+      "path": "links.md",
+      "depth": 0
+    },
+    {
+      "title": "Technical documents",
+      "depth": 0
+    },
+    {
+      "title": "Changelog",
+      "path": "CHANGELOG.md",
+      "depth": 1
+    },
+    {
+      "title": "Annotations — smrik-fund",
+      "path": "README.md",
+      "depth": 1
+    },
+    {
+      "title": "Architecture decision records",
+      "path": "technical/adr/README.md",
+      "depth": 1
+    },
+    {
+      "title": "Architecture",
+      "path": "technical/architecture.md",
+      "depth": 1
+    },
+    {
+      "title": "Onboarding",
+      "path": "technical/onboarding.md",
+      "depth": 1
+    },
+    {
+      "title": "Technical reference",
+      "path": "technical/reference.md",
+      "depth": 1
+    },
+    {
+      "title": "Runbook",
+      "path": "technical/runbook.md",
+      "depth": 1
+    }
+  ]
+}

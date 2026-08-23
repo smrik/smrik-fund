@@ -1,0 +1,24 @@
+- name: Overview
+  href: index.md
+- name: By type
+  href: by-type.md
+- name: By file
+  href: by-file.md
+- name: Links
+  href: links.md
+- name: "Technical documents"
+  items:
+    - name: "Changelog"
+      href: CHANGELOG.md
+    - name: "Annotations — smrik-fund"
+      href: README.md
+    - name: "Architecture decision records"
+      href: technical/adr/README.md
+    - name: "Architecture"
+      href: technical/architecture.md
+    - name: "Onboarding"
+      href: technical/onboarding.md
+    - name: "Technical reference"
+      href: technical/reference.md
+    - name: "Runbook"
+      href: technical/runbook.md

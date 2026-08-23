@@ -1,0 +1,95 @@
+{
+  "components": {
+    "schemas": {
+      "OutOfCodeInsightsAnnotation": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "line": {
+            "minimum": -1,
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "file",
+          "line",
+          "message",
+          "state",
+          "timestamp"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Annotations — smrik-fund — API catalogue",
+    "version": "1.0.0"
+  },
+  "openapi": "3.2.0",
+  "paths": {},
+  "x-ooci-annotation-catalog": [
+    {
+      "author": "Anonymous",
+      "file": "src/smrik_fund/main.py",
+      "id": "1064574f-cbcb-4aa6-b08f-4f91d56995d8",
+      "line": 29,
+      "message": "Testing... This model is best price/performance",
+      "severity": "info",
+      "state": "active",
+      "timestamp": "2026-08-18T19:21:24.165Z"
+    },
+    {
+      "author": "smrik",
+      "file": "src/smrik_fund/main.py",
+      "id": "24a897bd-ac55-4033-9ae1-aa59dc2385aa",
+      "line": 209,
+      "message": "CLI reconcile command",
+      "severity": "info",
+      "state": "active",
+      "timestamp": "2026-08-18T19:55:27.076Z"
+    },
+    {
+      "author": "smrik",
+      "file": "src/smrik_fund/main.py",
+      "id": "dee0e848-5b36-48a8-97e0-86b2f80952b5",
+      "line": 168,
+      "message": "CLI analyse command",
+      "severity": "info",
+      "state": "active",
+      "timestamp": "2026-08-18T19:55:11.464Z"
+    }
+  ],
+  "x-ooci-annotation-catalog-schema": "#/components/schemas/OutOfCodeInsightsAnnotation"
+}

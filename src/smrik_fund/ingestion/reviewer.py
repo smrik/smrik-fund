@@ -17,8 +17,8 @@ from .filing import FilingEvidenceError, validate_evidence_refs
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-PROMPT_VERSION = "reviewer-v2"
-SCHEMA_VERSION = "reviewer-result-v2"
+PROMPT_VERSION = "reviewer-v3"
+SCHEMA_VERSION = "reviewer-result-v3"
 
 REVIEWER_PROMPT = """You are the Risk Reviewer for a financial adjustment candidate.
 Your goal is low false acceptance. Use only the one candidate, the supplied
@@ -45,11 +45,23 @@ must be separately supported by the supplied evidence; do not infer a sub-item
 amount from a parent-line or year-over-year change. A suggested_amount is
 advisory only and must remain null unless the supplied evidence supports it.
 
+You must also answer the normalization question: even if this item is real and
+correctly quantified, does removing it from normalized earnings make financial
+sense? Set normalization_assessment to eligible, not_eligible, or uncertain,
+and recurrence_class to single_period (one discrete event in one period),
+multi_period_discrete (the same kind of discrete event recurs across periods),
+recurring_volatile (a recurring item whose size swings), structural (an ongoing
+cost of doing business), or uncertain. A one-period item can still be normal
+operating expenditure; recurrence alone does not decide eligibility, and a
+recurring item can still be non-core. Judge from the supplied evidence only.
+When uncertain, say so; uncertainty blocks automatic approval and that is
+acceptable.
+
 Return a non-accepting verdict with a concrete concern for unsupported
 evidence, a wrong target or period, an unsupported amount, an amount-basis
-misrepresentation, or an unsupported effect direction. Never apply an
-adjustment, approve it deterministically, start a revision loop, or retrieve
-more evidence.
+misrepresentation, an unsupported effect direction, or weak justification for
+removing the item from normalized earnings. Never apply an adjustment, approve
+it deterministically, start a revision loop, or retrieve more evidence.
 """
 
 
@@ -67,6 +79,18 @@ class ReviewResult(BaseModel):
 	item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
 	# This small extension makes the required wrong-period case explicit.
 	period_valid: bool | None = None
+	# Normalization judgment: should this item leave normalized earnings at all?
+	# Defaults are fail-closed so legacy persisted reviews cannot auto-approve.
+	normalization_assessment: Literal[
+		"eligible", "not_eligible", "uncertain"
+	] = "uncertain"
+	recurrence_class: Literal[
+		"single_period",
+		"multi_period_discrete",
+		"recurring_volatile",
+		"structural",
+		"uncertain",
+	] = "uncertain"
 	concerns: list[str]
 	suggested_amount: float | None = None
 	note: str | None = None

@@ -819,6 +819,16 @@ class ReviewResult(BaseModel):
     calculation_valid: bool | None
     target_valid: bool
     item_effect_on_line: Literal["increased_line", "decreased_line"] | None = None
+    normalization_assessment: Literal[
+        "eligible", "not_eligible", "uncertain"
+    ] = "uncertain"
+    recurrence_class: Literal[
+        "single_period",
+        "multi_period_discrete",
+        "recurring_volatile",
+        "structural",
+        "uncertain",
+    ] = "uncertain"
     concerns: list[str]
     suggested_amount: float | None = None
     note: str | None = None
@@ -827,6 +837,36 @@ class ReviewResult(BaseModel):
 The Reviewer independently judges `item_effect_on_line` from the evidence; it
 does not echo the Analyst. Disagreement with the Analyst fails auto-approval
 closed.
+
+The Reviewer also owns the normalization judgment:
+
+> Even if this item is real and correctly quantified, does removing it from
+> normalized earnings make financial sense?
+
+`normalization_assessment` answers that question. `recurrence_class`
+describes the item's temporal pattern as supporting evidence. They are
+separate concepts: a one-period item can still be normal operating
+expenditure, and a recurring item can still be non-core. Defaults are
+fail-closed (`uncertain`) so legacy persisted reviews can never auto-approve.
+
+### Decision layers
+
+These four questions are asked in order, by different mechanisms:
+
+```text
+1. Evidence validity            is the disclosure real and attributable?
+2. Normalization eligibility    should it leave normalized earnings at all?
+3. Automation eligibility       is it safe and small enough to auto-approve?
+4. State                        has it actually been approved?
+```
+
+Layer 2 combines the Reviewer judgment with one deterministic safety signal:
+the same `company + target_row_key + item_key` observed in more than one
+fiscal period proves recurrence (multi-period evidence). Absence of a
+repeated key proves nothing and never establishes single-period status.
+Eligibility constrains automatic approval only — a human may still approve a
+classified recurring or not-eligible item through review, passing hard
+accounting mechanics, with an override reason recorded in history.
 
 ### Revision limit
 
@@ -1359,6 +1399,9 @@ reviewer verdict == accept
 AND evidence_strength == strong
 AND amount_basis in {disclosed, calculated}
 AND judgment_level == low
+AND normalization_assessment == eligible
+AND recurrence_class == single_period
+AND no deterministic multi-period evidence for the same item key
 AND materiality below provisional threshold
 AND target valid
 AND period valid

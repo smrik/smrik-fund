@@ -58,6 +58,7 @@ def review(
 def eligible_conditions() -> RiskGateConditions:
 	return RiskGateConditions(
 		materiality_eligible=True,
+		normalization_eligible=True,
 		reconciliation_clear=True,
 		possible_duplicate=False,
 		group_reconciles=True,
@@ -67,6 +68,26 @@ def eligible_conditions() -> RiskGateConditions:
 		zero_target_with_line_delta=False,
 		deterministic_checks_pass=True,
 	)
+
+
+class NormalizationEligibilityTests(TestCase):
+	def test_failed_or_unknown_normalization_eligibility_blocks(self) -> None:
+		for value in (False, None):
+			with self.subTest(normalization_eligible=value):
+				conditions = RiskGateConditions(
+					**{
+						**eligible_conditions().__dict__,
+						"normalization_eligible": value,
+					}
+				)
+				result = evaluate_risk_gate(
+					candidate(), review(), conditions
+				)
+				self.assertTrue(result.requires_human_review)
+				self.assertIn(
+					"normalization_eligibility_failed_or_unknown",
+					result.reasons,
+				)
 
 
 class RiskGateTests(TestCase):

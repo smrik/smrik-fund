@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 2,
+  "annotations": [
+    {
+      "fileUri": "file:///c%3A/Projects/finance/smrik-fund/src/smrik_fund/main.py",
+      "file": "src/smrik_fund/main.py",
+      "origin": {
+        "kind": "manual"
+      },
+      "message": "Testing... This model is best price/performance",
+      "author": "Anonymous",
+      "timestamp": "2026-08-18T19:21:24.165Z",
+      "severity": "info",
+      "languageId": "python",
+      "id": "1064574f-cbcb-4aa6-b08f-4f91d56995d8",
+      "schemaVersion": 2,
+      "startOffset": 564,
+      "endOffset": 600,
+      "lineHash": "e3a7d729",
+      "contextBefore": [
+        "# endregion",
+        "",
+        ""
+      ],
+      "contextAfter": [
+        "ticker: str,",
+        "pnl: pd.DataFrame,",
+        ") -> Path:"
+      ],
+      "state": "active"
+    },
+    {
+      "fileUri": "file:///c%3A/Projects/finance/smrik-fund/src/smrik_fund/main.py",
+      "file": "src/smrik_fund/main.py",
+      "origin": {
+        "kind": "manual"
+      },
+      "message": "CLI analyse command",
+      "author": "smrik",
+      "timestamp": "2026-08-18T19:55:11.464Z",
+      "severity": "info",
+      "languageId": "python",
+      "id": "dee0e848-5b36-48a8-97e0-86b2f80952b5",
+      "schemaVersion": 2,
+      "startOffset": 4945,
+      "endOffset": 4957,
+      "lineHash": "ffe94d30",
+      "contextBefore": [
+        "",
+        "# region Typer commands main",
+        "@app.command()"
+      ],
+      "contextAfter": [
+        "ticker: str,",
+        "years: int = typer.Option(default=3, help=\"Number of annual periods to include.\"),",
+        "adjustments: bool = typer.Option("
+      ],
+      "state": "active"
+    },
+    {
+      "fileUri": "file:///c%3A/Projects/finance/smrik-fund/src/smrik_fund/main.py",
+      "file": "src/smrik_fund/main.py",
+      "origin": {
+        "kind": "manual"
+      },
+      "message": "CLI reconcile command",
+      "author": "smrik",
+      "timestamp": "2026-08-18T19:55:27.076Z",
+      "severity": "info",
+      "languageId": "python",
+      "id": "24a897bd-ac55-4033-9ae1-aa59dc2385aa",
+      "schemaVersion": 2,
+      "startOffset": 6147,
+      "endOffset": 6182,
+      "lineHash": "e2f9a85d",
+      "contextBefore": [
+        "",
+        "",
+        "@app.command()"
+      ],
+      "contextAfter": [
+        "\"\"\"Reconcile safe reported P&L subtotals from the existing analytical P&L.\"\"\"",
+        "pnl = load_analytical_pnl(ticker)",
+        "_save_and_report_reconciliation(ticker, pnl)"
+      ],
+      "state": "active"
+    }
+  ]
+}

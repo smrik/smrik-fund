@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "site": {
+    "title": "Annotations — smrik-fund",
+    "language": "en"
+  },
+  "build": {
+    "content": [
+      "**/*.md"
+    ],
+    "resources": [
+      "**/*.{png,jpg,jpeg,gif,svg,webp,ico}"
+    ],
+    "navigation": "site.navigation.json",
+    "manifest": "site.manifest.json",
+    "outputDirectory": "_site",
+    "themePaths": []
+  }
+}

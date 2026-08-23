@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "generator": "out-of-code-insights",
+  "generatorVersion": "1.4.6",
+  "template": "complete",
+  "formats": [
+    "hosted-wiki",
+    "html",
+    "markdown",
+    "openapi",
+    "static-site"
+  ],
+  "files": [
+    {
+      "path": "by-file.md",
+      "sha256": "0e610c29339088159699f59d0d1d90c5952724c5f80e12e3fff5b6bc5c8dc225",
+      "bytes": 941
+    },
+    {
+      "path": "by-type.md",
+      "sha256": "b95352a28aea3fd4c378200b0df8d92c2609edabb9f00d555883aa020e06346b",
+      "bytes": 624
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "aab15fa1ce729b1758f462602b1c94c6ea0adf9518ed15ddbbe6f458264486ec",
+      "bytes": 167
+    },
+    {
+      "path": "documentation-report.json",
+      "sha256": "707a939266d5020bdf3a43db2e490e44da383019bb3fc5010992da85d02cf461",
+      "bytes": 1906
+    },
+    {
+      "path": "html/annotations/1064574f-cbcb-4aa6-b08f-4f91d56995d8-3fe2382b.html",
+      "sha256": "c2b4d5ba8c041f9b1d648785142a9e50bf6e033a5f8bb4c6cffe722fbd8ef058",
+      "bytes": 1659
+    },
+    {
+      "path": "html/annotations/24a897bd-ac55-4033-9ae1-aa59dc2385aa-7719f545.html",
+      "sha256": "525f9576604fc64411a4b0d8a9ad07539ad58963a5aee16a379124a80aa21998",
+      "bytes": 1578
+    },
+    {
+      "path": "html/annotations/dee0e848-5b36-48a8-97e0-86b2f80952b5-25b410bb.html",
+      "sha256": "3cb282dc3f94617a9e0e9192fd09852cbe80572c8d389156b1d1de54ab47e518",
+      "bytes": 1572
+    },
+    {
+      "path": "html/documents/CHANGELOG-d226e684.html",
+      "sha256": "d8bad77ad3aa6acf2679155543d51aa0c2f7559113ce2ae2dbf8e1277b41356f",
+      "bytes": 1361
+    },
+    {
+      "path": "html/documents/README-18eb20e2.html",
+      "sha256": "059fc0f9054aedd956adf6b7b3144fe943aaa9fb9951da8ad148b9d84cf50010",
+      "bytes": 1723
+    },
+    {
+      "path": "html/documents/technical-adr-README-f7afbf2c.html",
+      "sha256": "585a77f527755b73bf53f0f3ce4d085428ffa690c8e63d6db87bc3f9b9f199e3",
+      "bytes": 1332
+    },
+    {
+      "path": "html/documents/technical-architecture-24b1875d.html",
+      "sha256": "2844d8cf5e6a99b23a0b40f4ec78bd85a9c46ec0ed444cec2b459764e0ec6fcd",
+      "bytes": 1292
+    },
+    {
+      "path": "html/documents/technical-onboarding-4da7627b.html",
+      "sha256": "05385bf53299543f483e499a4797f445f88b3389376c40848ab04dbe181d8bef",
+      "bytes": 1282
+    },
+    {
+      "path": "html/documents/technical-reference-94b2fd25.html",
+      "sha256": "0c964d568d4806565cd91a803fb4a2498bd92bc35e9b4146e38996bf797a5c6c",
+      "bytes": 1292
+    },
+    {
+      "path": "html/documents/technical-runbook-765bfd4a.html",
+      "sha256": "d40f338a1bc9fe181469031aa704de4616eb1c3249e8da50e6807682d3199006",
+      "bytes": 1267
+    },
+    {
+      "path": "html/index.html",
+      "sha256": "b96e8aeece69dd1fba14a23b8c8dbf5f869df197edbb02f28164c36103d63bb3",
+      "bytes": 3784
+    },
+    {
+      "path": "html/styles.css",
+      "sha256": "3fdb8da394953ec897177801eb086a564522ee17d90a485a7bae29eb43a2b24e",
+      "bytes": 3418
+    },
+    {
+      "path": "index.md",
+      "sha256": "861e587c5ea7d129cb835de19c9227b21e4937f598a05ec04d94d75d3a64ac68",
+      "bytes": 471
+    },
+    {
+      "path": "links.md",
+      "sha256": "ba658dfed4d465c50d99150b05b7fbf6229ba219433e8850c9c684e8fb1bbda6",
+      "bytes": 47
+    },
+    {
+      "path": "openapi/openapi.json",
+      "sha256": "af7f879e0c838065f0e3a7d1885f9d68bcbf98ea08743aefff0a38b501231433",
+      "bytes": 2299
+    },
+    {
+      "path": "README.md",
+      "sha256": "28ae85c0d361657f6b7773dc9093b72536f2e072884f81f09f7debd7fd64b1c0",
+      "bytes": 319
+    },
+    {
+      "path": "site.config.json",
+      "sha256": "89b8ca1dba699c6ebe0cfa3176e1deab1a14b5d55c525312e0c08610d021592f",
+      "bytes": 368
+    },
+    {
+      "path": "site.manifest.json",
+      "sha256": "70cc96a98e51817c7bfb51bb69fdaaebf4576000610fadac6abb8f95a7930602",
+      "bytes": 1330
+    },
+    {
+      "path": "site.navigation.json",
+      "sha256": "25fa1c8aa5778d9a98a0123cd510b9e3419af48a313e2e0f1adeb437f3cba3fb",
+      "bytes": 1156
+    },
+    {
+      "path": "technical/adr/README.md",
+      "sha256": "e5f4c4bdd76381a920902d8ff7d64d5f630c8fc57859ef26bdbff2437a3cca07",
+      "bytes": 82
+    },
+    {
+      "path": "technical/architecture.md",
+      "sha256": "eac0d1ec673892d3dc6c5a4ed99e901efea24e126bbc99ddf9f7767c1806a0d1",
+      "bytes": 74
+    },
+    {
+      "path": "technical/onboarding.md",
+      "sha256": "f772038348c71308b905bcbcdb3c1719c6c4b1adb8dad8c5f14c64f3e392ea03",
+      "bytes": 70
+    },
+    {
+      "path": "technical/reference.md",
+      "sha256": "63c057cab45483f0d9c0ca1ac105962590e7a0c17f194fea94214270235b2942",
+      "bytes": 74
+    },
+    {
+      "path": "technical/runbook.md",
+      "sha256": "56c1349dd48f1d4a4a24f42524f5b1d6da784eeecaab9841bfb0568cd5ebdd9a",
+      "bytes": 64
+    },
+    {
+      "path": "toc.yml",
+      "sha256": "9ca01bf7f0fb0637fc0d4ceba8db48c042b6e6139872de527c2aa015b0438e31",
+      "bytes": 616
+    },
+    {
+      "path": "wiki/hosted/_Footer.md",
+      "sha256": "76872318f639bc8f324eeeaab45fe5a94fbfd6d0a0aab967ff37616e4c07b840",
+      "bytes": 37
+    },
+    {
+      "path": "wiki/hosted/_Sidebar.md",
+      "sha256": "0dd7ed87910351e8dfbc53c8e4fcf611e418097e603067e598b099c38012146b",
+      "bytes": 478
+    },
+    {
+      "path": "wiki/hosted/by-file.md",
+      "sha256": "412091758273edb6f9c067cea6f7f359d0a9c34aa2fcd665c4f232834956a681",
+      "bytes": 959
+    },
+    {
+      "path": "wiki/hosted/by-type.md",
+      "sha256": "ca06a0bf5af04e3dce7445cba90a457ce5de67c91a01514ca1e49dd33ee7ee11",
+      "bytes": 648
+    },
+    {
+      "path": "wiki/hosted/CHANGELOG.md",
+      "sha256": "aab15fa1ce729b1758f462602b1c94c6ea0adf9518ed15ddbbe6f458264486ec",
+      "bytes": 167
+    },
+    {
+      "path": "wiki/hosted/Home.md",
+      "sha256": "0a0fcbb9a498f9f18d3c4807f37ae72e1dae3f2955834337ba71725c3aa7e647",
+      "bytes": 475
+    },
+    {
+      "path": "wiki/hosted/links.md",
+      "sha256": "ba658dfed4d465c50d99150b05b7fbf6229ba219433e8850c9c684e8fb1bbda6",
+      "bytes": 47
+    },
+    {
+      "path": "wiki/hosted/README.md",
+      "sha256": "558870a9302f57519233e94cb3447d91b648f18a4096406eea17d1fc0f7c86ff",
+      "bytes": 319
+    },
+    {
+      "path": "wiki/hosted/technical-adr-README.md",
+      "sha256": "e5f4c4bdd76381a920902d8ff7d64d5f630c8fc57859ef26bdbff2437a3cca07",
+      "bytes": 82
+    },
+    {
+      "path": "wiki/hosted/technical-architecture.md",
+      "sha256": "eac0d1ec673892d3dc6c5a4ed99e901efea24e126bbc99ddf9f7767c1806a0d1",
+      "bytes": 74
+    },
+    {
+      "path": "wiki/hosted/technical-onboarding.md",
+      "sha256": "f772038348c71308b905bcbcdb3c1719c6c4b1adb8dad8c5f14c64f3e392ea03",
+      "bytes": 70
+    },
+    {
+      "path": "wiki/hosted/technical-reference.md",
+      "sha256": "63c057cab45483f0d9c0ca1ac105962590e7a0c17f194fea94214270235b2942",
+      "bytes": 74
+    },
+    {
+      "path": "wiki/hosted/technical-runbook.md",
+      "sha256": "56c1349dd48f1d4a4a24f42524f5b1d6da784eeecaab9841bfb0568cd5ebdd9a",
+      "bytes": 64
+    }
+  ]
+}

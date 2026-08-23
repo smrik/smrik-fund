@@ -20,6 +20,7 @@ class RiskGateConditions:
 	"""
 
 	materiality_eligible: bool | None = None
+	normalization_eligible: bool | None = None
 	reconciliation_clear: bool | None = None
 	possible_duplicate: bool | None = None
 	group_reconciles: bool | None = None
@@ -114,6 +115,8 @@ def evaluate_risk_gate(
 
 	if conditions.materiality_eligible is not True:
 		reasons.append("materiality_failed_or_unknown")
+	if conditions.normalization_eligible is not True:
+		reasons.append("normalization_eligibility_failed_or_unknown")
 	if conditions.reconciliation_clear is not True:
 		reasons.append("reconciliation_unresolved_or_unknown")
 	if conditions.possible_duplicate is not False:
