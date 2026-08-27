@@ -365,6 +365,7 @@ class AdjustmentAnalysisTests(TestCase):
 					"run_id": "run-approved",
 				})),
 				patch("smrik_fund.main._gate_conditions", return_value=conditions),
+				patch("smrik_fund.main.ENABLE_CANONICAL_AUTO_APPROVAL", True),
 			):
 				manifest_path = _run_adjustment_analysis(
 					"MSFT", make_integrated_pnl(), "test-model", "high", output_root=root,
@@ -425,6 +426,7 @@ class AdjustmentAnalysisTests(TestCase):
 					return_value=(result, {"model": "test-model", "run_id": "run-approved"}),
 				),
 				patch("smrik_fund.main.run_reviewer", return_value=(review, {"run_id": "run-approved"})) as reviewer,
+				patch("smrik_fund.main.ENABLE_CANONICAL_AUTO_APPROVAL", True),
 			):
 				first_manifest_path = _run_adjustment_analysis(
 					"MSFT",
@@ -726,6 +728,7 @@ class AdjustmentAnalysisTests(TestCase):
 				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-approved"})),
 				patch("smrik_fund.main.run_analyst", return_value=(base, {"model": "test-model", "run_id": "run-approved"})),
 				patch("smrik_fund.main.run_reviewer", return_value=(review, {"run_id": "run-approved"})),
+			patch("smrik_fund.main.ENABLE_CANONICAL_AUTO_APPROVAL", True),
 			):
 				_run_adjustment_analysis(
 					"MSFT", make_integrated_pnl(), "test-model", "high",
@@ -781,7 +784,10 @@ class AdjustmentAnalysisTests(TestCase):
 				88.0,
 			)
 
-	def test_live_materiality_stays_unknown_and_fail_closed(self) -> None:
+	def test_shadow_materiality_computed_but_canonical_write_suppressed(self) -> None:
+		# Fully passing candidate: real materiality metrics pass every
+		# provisional threshold and the shadow gate would auto-approve —
+		# but shadow mode must never write canonical history.
 		result = AnalystResult(
 			candidates=[
 				AnalystCandidate(
@@ -803,6 +809,9 @@ class AdjustmentAnalysisTests(TestCase):
 			judgment_level="low",
 			calculation_valid=None,
 			target_valid=True,
+			item_effect_on_line="increased_line",
+			normalization_assessment="eligible",
+			recurrence_class="single_period",
 			period_valid=True,
 			concerns=[],
 		)
@@ -818,13 +827,139 @@ class AdjustmentAnalysisTests(TestCase):
 					output_root=root, filing=Filing(),
 				)
 			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-			self.assertIsNone(
-				manifest["candidates"][0]["gate"]["conditions"]["materiality_eligible"]
+			candidate = manifest["candidates"][0]
+			# 10 / 1000 revenue = 1%, 10 / 200 operating income = 5%,
+			# 10 / 100 target line = 10%: exactly at every provisional limit.
+			self.assertTrue(
+				candidate["gate"]["conditions"]["materiality_eligible"]
 			)
-			self.assertEqual(manifest["candidates"][0]["final_status"], "human_review")
+			preview = candidate["automation_preview"]
+			self.assertEqual(preview["decision"], "auto_approve")
+			self.assertFalse(preview["canonical_writes_enabled"])
+			self.assertEqual(preview["thresholds"]["pct_revenue"], 0.01)
+			# The most important M3 invariant: no canonical write, no effect.
+			self.assertEqual(candidate["final_status"], "human_review")
+			self.assertEqual(candidate["application_status"], "not_applied")
 			self.assertFalse(
 				(root / "MSFT" / "03_output" / "adjustment_history.csv").exists()
 			)
+			self.assertTrue(manifest["reported_equals_adjusted"])
+
+	def test_shadow_auto_approve_never_touches_existing_canonical_state(self) -> None:
+		# The key M3 invariant: a candidate that would otherwise pass every
+		# condition and earns shadow_auto_approve=True must leave canonical
+		# history and the adjusted P&L byte-identical.
+		def analyst_for(key: str, amount: float, effect: str, target: str) -> AnalystResult:
+			return AnalystResult(
+				candidates=[
+					AnalystCandidate(
+						target_line=target,
+						period=PERIOD,
+						item_amount=amount,
+						item_effect_on_line=effect,
+						item_key=key,
+						amount_basis="disclosed",
+						reason="Fixture.",
+						evidence_refs=["E1"],
+					)
+				]
+			)
+
+		def passing_review(effect: str = "increased_line") -> ReviewResult:
+			return ReviewResult(
+				verdict="accept",
+				evidence_strength="strong",
+				amount_basis="disclosed",
+				judgment_level="low",
+				calculation_valid=None,
+				target_valid=True,
+				item_effect_on_line=effect,
+				normalization_assessment="eligible",
+				recurrence_class="single_period",
+				period_valid=True,
+				concerns=[],
+			)
+
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-seed"})),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(
+						analyst_for("seed-impairment", 10.0, "increased_line", "Research and development"),
+						{"model": "test-model", "run_id": "run-seed"},
+					),
+				),
+				patch("smrik_fund.main.run_reviewer", return_value=(passing_review(), {"run_id": "run-seed"})),
+				patch("smrik_fund.main.ENABLE_CANONICAL_AUTO_APPROVAL", True),
+			):
+				_run_adjustment_analysis(
+					"MSFT", make_integrated_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(),
+				)
+			history_path = root / "MSFT" / "03_output" / "adjustment_history.csv"
+			history_before = history_path.read_bytes()
+			adjusted_before = (root / "MSFT" / "03_output" / "adjusted_pnl.csv").read_bytes()
+
+			# Different economic family; would pass every condition including
+			# real materiality — but shadow mode is active in this run.
+			with (
+				patch("smrik_fund.main.run_discovery", return_value=(make_discovery(), {"run_id": "run-shadow"})),
+				patch(
+					"smrik_fund.main.run_analyst",
+					return_value=(
+						analyst_for("gains-disposal", 5.0, "decreased_line", "General and administrative"),
+						{"model": "test-model", "run_id": "run-shadow"},
+					),
+				),
+				patch("smrik_fund.main.run_reviewer", return_value=(passing_review("decreased_line"), {"run_id": "run-shadow"})),
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT", make_integrated_pnl(), "test-model", "high",
+					output_root=root, filing=Filing(),
+				)
+
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			candidate = manifest["candidates"][0]
+			self.assertEqual(
+				candidate["automation_preview"]["decision"], "auto_approve"
+			)
+			self.assertFalse(candidate["automation_preview"]["canonical_writes_enabled"])
+			self.assertEqual(history_path.read_bytes(), history_before)
+			self.assertEqual(
+				(root / "MSFT" / "03_output" / "adjusted_pnl.csv").read_bytes(),
+				adjusted_before,
+			)
+			ga = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+			self.assertEqual(
+				ga.loc[ga["label"] == "General and administrative", PERIOD].iloc[0],
+				50.0,
+			)
+
+	def test_materiality_eligible_fails_closed_on_unknown_ratios(self) -> None:
+		from smrik_fund.main import _materiality_eligible
+
+		self.assertTrue(
+			_materiality_eligible(
+				{"pct_revenue": 0.01, "pct_operating_income": 0.05, "pct_target_line": 0.10}
+			)
+		)
+		self.assertFalse(
+			_materiality_eligible(
+				{"pct_revenue": None, "pct_operating_income": 0.01, "pct_target_line": 0.01}
+			)
+		)
+		self.assertFalse(
+			_materiality_eligible(
+				{"pct_revenue": 0.0101, "pct_operating_income": 0.01, "pct_target_line": 0.01}
+			)
+		)
+		self.assertFalse(
+			_materiality_eligible(
+				{"pct_revenue": -0.91, "pct_operating_income": 0.01, "pct_target_line": 0.01}
+			)
+		)
 
 	def test_gate_builder_marks_over_target_negative_parent_derived_and_missing_cases(self) -> None:
 		pnl = make_integrated_pnl()
@@ -1666,6 +1801,7 @@ class CrossPeriodRecursionRegressionTests(TestCase):
 					"smrik_fund.main.run_reviewer",
 					return_value=(eligible_utp_review(), {"run_id": "run-p1"}),
 				),
+				patch("smrik_fund.main.ENABLE_CANONICAL_AUTO_APPROVAL", True),
 			):
 				first_manifest = json.loads(
 					_run_adjustment_analysis(

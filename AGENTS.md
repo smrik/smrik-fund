@@ -225,6 +225,19 @@ If yes:
 - make the smallest necessary fix;
 - do not broaden the fix into a general refactor.
 
+## Output reviewability
+
+Make material outputs understandable outside the current task. Where practical,
+include the artifact's purpose, source/scope, relevant run or period, units and
+definitions, key results, and important caveats in the output itself or alongside it.
+Do not rely on the code or chat history as the only explanation.
+
+In the final report, link every material output and show a small representative
+preview appropriate to its format: for example, table headers plus five rows, a
+sample JSON object, a report excerpt, a rendered page/image, or representative CLI
+output. Include enough context that another person can understand what the preview
+shows and assess the output without first inspecting the implementation.
+
 ## Completion report
 
 Keep the final report short.

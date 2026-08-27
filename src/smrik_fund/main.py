@@ -30,6 +30,13 @@ from .ingestion.adjustments import (
 from .ingestion.adjustments import (
 	validated_history_identity_rows as _validated_history_identity_rows,
 )
+from .ingestion.analytical_scan import (
+	AnalyticalScanError,
+	format_analytical_pnl_for_scan,
+	render_analytical_scan_summary,
+	run_analytical_scan,
+	save_analytical_scan,
+)
 from .ingestion.discovery import (
 	DiscoveryError,
 	DiscoveryResult,
@@ -79,9 +86,10 @@ def _reconciliation_summary(checks: pd.DataFrame) -> dict[str, int]:
 def _save_and_report_reconciliation(
 	ticker: str,
 	pnl: pd.DataFrame,
+	output_root: str | Path = "data",
 ) -> Path:
 	checks = reconcile_pnl(pnl)
-	output_path = save_reconciliation_checks(ticker, checks)
+	output_path = save_reconciliation_checks(ticker, checks, output_root)
 
 	for check in checks.to_dict(orient="records"):
 		if check["status"] in {"FAIL", "SKIPPED"}:
@@ -115,6 +123,33 @@ _HISTORY_COLUMNS = (
 
 # Keep Reviewer fan-out finite without truncating an Analyst response.
 MAX_CANDIDATES_PER_TOPIC = 3
+
+# Provisional auto-approval materiality limits (M3). These are placeholder
+# constants, not calibrated policy; the benchmark milestone owns recalibration.
+# Every applicable ratio must pass. An unavailable denominator yields None,
+# which fails closed — an unknown size is never auto-approvable.
+_AUTO_MATERIALITY_LIMITS = {
+	"pct_revenue": 0.01,
+	"pct_operating_income": 0.05,
+	"pct_target_line": 0.10,
+}
+
+# Shadow mode (M3): the gate computes what it would do under the provisional
+# policy, but canonical approval rows are never written from that result.
+# Flip to True only after benchmark results justify live auto-approval (M5).
+ENABLE_CANONICAL_AUTO_APPROVAL = False
+
+
+def _materiality_eligible(metrics: dict[str, float | None]) -> bool:
+	"""True only when every provisional ratio exists, is non-negative, and
+	passes its limit. A negative ratio means a negative denominator (e.g. a
+	net-loss line), where size-relative materiality is meaningless — that
+	fails closed rather than sliding under the limit."""
+	for name, limit in _AUTO_MATERIALITY_LIMITS.items():
+		value = metrics.get(name)
+		if value is None or value < 0 or value > limit:
+			return False
+	return True
 
 
 def _load_adjustment_history(path: Path) -> pd.DataFrame:
@@ -480,6 +515,15 @@ def _materiality_metrics(
 	}
 
 
+def _automation_preview_text(preview: dict[str, Any] | None) -> str | None:
+	"""Unambiguous shadow-mode wording; never a bare boolean."""
+	if not preview:
+		return None
+	if preview.get("decision") == "auto_approve":
+		return "would auto-approve under provisional policy"
+	return "would require human review"
+
+
 def build_normalization_summary(
 	records: list[dict[str, Any]],
 	*,
@@ -494,12 +538,13 @@ def build_normalization_summary(
 		"reviewer_notes",
 		"unresolved_issues",
 		"why_not_automatic",
+		"automation_previews",
 		"reviewer_verdicts",
 		"gate_decisions",
 		"final_statuses",
 		"application_statuses",
 	)
-	nullable_fields = set(list_fields[-4:])
+	nullable_fields = set(list_fields[-5:])
 
 	def add(
 		group: dict[str, Any], field: str, value: Any, *, allow_none: bool = False
@@ -574,6 +619,9 @@ def build_normalization_summary(
 			"reviewer_notes": (review.get("note"),),
 			"unresolved_issues": (record.get("error"),),
 			"why_not_automatic": gate.get("reasons") or (),
+			"automation_previews": (
+				_automation_preview_text(record.get("automation_preview")),
+			),
 			"reviewer_verdicts": (review.get("verdict"),),
 			"gate_decisions": (gate.get("decision"),),
 			"final_statuses": (record.get("final_status"),),
@@ -747,6 +795,8 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			if len(reasons) > 3:
 				shown += f"; (+{len(reasons) - 3} more in manifest)"
 			typer.echo("  Why not automatic: " + shown)
+		if preview := first(group["automation_previews"]):
+			typer.echo(f"  Automation preview: {preview}")
 
 
 def _run_identity_families(
@@ -1398,6 +1448,12 @@ def _run_adjustment_analysis(
 			multi_period_evidence = _multi_period_evidence(
 				working_history, run_families, identity
 			)
+			candidate_metrics = _materiality_metrics(pnl, candidate)
+			if isinstance(materiality_passed, bool):
+				# Explicit frozen test override; live callers never set this.
+				materiality_value: bool | None = materiality_passed
+			else:
+				materiality_value = _materiality_eligible(candidate_metrics)
 			conditions = _gate_conditions(
 				pnl,
 				candidate,
@@ -1405,11 +1461,7 @@ def _run_adjustment_analysis(
 				history=working_history,
 				candidate_identity=identity,
 				identity_status=lookup["status"],
-				materiality_passed=(
-					materiality_passed
-					if isinstance(materiality_passed, bool)
-					else None
-				),
+				materiality_passed=materiality_value,
 				normalization_eligible=_normalization_eligible(
 					review, multi_period_evidence
 				),
@@ -1420,8 +1472,14 @@ def _run_adjustment_analysis(
 				review,
 				conditions,
 			)
+			# Shadow mode: the gate decision is an automation preview only.
+			# Canonical approval additionally requires the feature switch, so
+			# a passing shadow result can never append history by itself.
+			shadow_auto_approve = gate.eligible_for_auto_approval
 			is_approved = (
-				gate.eligible_for_auto_approval and lookup["status"] == "new"
+				shadow_auto_approve
+				and ENABLE_CANONICAL_AUTO_APPROVAL
+				and lookup["status"] == "new"
 			)
 			gate_record = {
 				"decision": gate.decision,
@@ -1449,11 +1507,20 @@ def _run_adjustment_analysis(
 						"multi_period_evidence": multi_period_evidence,
 					},
 					"gate": {**gate_record, "conditions": conditions_data},
+					"automation_preview": {
+						# What the gate WOULD do under the provisional policy.
+						"decision": (
+							"auto_approve"
+							if shadow_auto_approve
+							else "human_review"
+						),
+						"canonical_writes_enabled": ENABLE_CANONICAL_AUTO_APPROVAL,
+						"materiality_eligible": materiality_value,
+						"thresholds": dict(_AUTO_MATERIALITY_LIMITS),
+					},
 					"materiality": {
-						"passed": materiality_passed
-						if isinstance(materiality_passed, bool)
-						else None,
-						"metrics": _materiality_metrics(pnl, candidate),
+						"passed": materiality_value,
+						"metrics": candidate_metrics,
 					},
 					"final_status": final_status,
 					"application_status": ("applied" if is_approved else "not_applied"),
@@ -1466,7 +1533,7 @@ def _run_adjustment_analysis(
 					if lookup["status"] == "new"
 					else int(lookup["version"]) + 1
 				)
-				metrics = _materiality_metrics(pnl, candidate)
+				metrics = candidate_metrics
 				# The gate blocks auto-approval without a derivable delta, so
 				# every approved row records a provable direction.
 				line_delta = derive_line_delta(
@@ -1966,6 +2033,9 @@ def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFra
 		f" recurrence={normalization.get('recurrence_class')}"
 		f" multi_period_signal={normalization.get('multi_period_evidence')}"
 	)
+	preview_text = _automation_preview_text(record.get("automation_preview"))
+	if preview_text:
+		typer.echo(f"  Automation preview: {preview_text}")
 	reasons = [
 		_gate_reason_label(reason) for reason in (gate.get("reasons") or [])
 	]
@@ -2184,15 +2254,48 @@ def analyze(
 		default=DEFAULT_REASONING_EFFORT,
 		help="OpenAI reasoning effort for proposals; override as needed.",
 	),
+	scan: bool = typer.Option(
+		default=False,
+		help="Run the read-only Analytical Scan over the reported P&L.",
+	),
+	output_root: Path = typer.Option(
+		default=Path("data"),
+		help="Workspace root containing data outputs.",
+	),
 ) -> None:
 	"""Build the analytical P&L and save deterministic reconciliation checks."""
+	if scan and adjustments:
+		raise typer.BadParameter("--scan cannot be combined with --adjustments")
 	pnl = build_analytical_pnl(ticker, years=years)
-	output_path = save_analytical_pnl(ticker, pnl)
+	output_path = save_analytical_pnl(ticker, pnl, output_root)
 
 	typer.echo(f"Saved analytical P&L: {output_path}")
 
 	# Reconciliation stays deterministic and runs before the optional Analyst.
-	_save_and_report_reconciliation(ticker, pnl)
+	_save_and_report_reconciliation(ticker, pnl, output_root)
+	if scan:
+		try:
+			context = format_analytical_pnl_for_scan(pnl)
+			result, metadata = run_analytical_scan(
+				ticker,
+				pnl,
+				filing=pnl.attrs.get("edgar_filing"),
+				model=model,
+				reasoning_effort=reasoning_effort,
+				context=context,
+			)
+			output_path = save_analytical_scan(
+				ticker,
+				result,
+				metadata,
+				context,
+				output_root,
+			)
+			typer.echo(f"Saved analytical scan: {output_path}")
+			typer.echo(render_analytical_scan_summary(result))
+		except AnalyticalScanError as exc:
+			typer.echo(f"Analytical scan unavailable: {exc}", err=True)
+		return
 	if adjustments:
 		try:
 			_run_adjustment_analysis(
@@ -2200,6 +2303,7 @@ def analyze(
 				pnl,
 				model,
 				reasoning_effort,
+				output_root=output_root,
 				filing=pnl.attrs.get("edgar_filing"),
 			)
 		except AdjustmentAnalysisError as exc:

@@ -1355,6 +1355,27 @@ approved state untouched. No semantic duplicate subsystem is needed in V1.
 Materiality is deterministic.
 Thresholds are conservative and provisional.
 
+Provisional V1 constants (shadow mode, implementation-added M3):
+
+```text
+pct revenue          <= 1%
+pct operating income <= 5%
+pct target line      <= 10%
+```
+
+All applicable ratios must pass.
+An unavailable denominator yields None and fails closed: an unknown size is
+never auto-approvable.
+These numbers are placeholders, not calibrated policy; the benchmark milestone
+owns recalibration.
+
+Shadow mode (M3): the gate computes `automation_preview` — what it would do
+under this provisional policy — but a passing preview never writes canonical
+history. Canonical auto-approval stays disabled behind an explicit feature
+switch until benchmark results justify enabling it (M5).
+Materiality cannot rescue a normalization-eligibility failure: UTP interest is
+materially small yet recurring, so it stays human-review regardless of size.
+
 Calculate obvious ratios now.
 Do not build a general materiality framework.
 

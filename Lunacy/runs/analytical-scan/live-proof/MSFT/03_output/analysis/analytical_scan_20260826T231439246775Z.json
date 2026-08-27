@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "ticker": "MSFT",
+    "company_name": "MICROSOFT CORP",
+    "filing_accession": "0001193125-26-323660",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "high",
+    "prompt_version": "analytical-scan-v2",
+    "schema_version": "analytical-scan-result-v2",
+    "run_id": "20260826T231439246775Z",
+    "timestamp_utc": "2026-08-26T23:14:39.246952+00:00",
+    "finding_count": 4,
+    "supplied_line_count": 19
+  },
+  "context": "# Analytical Scan Context\nReported annual periods (newest to oldest): FY26=2026-06-30 (FY), FY25=2025-06-30 (FY), FY24=2024-06-30 (FY)\nValues preserve supplied signs; N/A means missing or mathematically undefined.\nMovement metrics show absolute changes (abs), guarded growth, intensity, bps, and CAGR where supplied.\nEach selectable source row has a line_ref=L## marker; copy only the bare L## token into affected_line_refs.\nDo not include brackets, line_ref=, or other decoration; line_ref=N/A is not a selectable row.\n\n## Line movements\nline_ref=L01 | Revenue | source_label=Revenue | concept=us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax; standard_concept=Revenue | values: FY26=$331,839,000,000, FY25=$281,724,000,000, FY24=$245,122,000,000 | movement: FY26 abs=+$50,115,000,000, growth=+17.8%; FY25 abs=+$36,602,000,000, growth=+14.9%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+100.0%, bps change=+0 bps; FY25=+100.0%, bps change=+0 bps; FY24=+100.0%, bps change=N/A | 2Y CAGR=+16.4%\nline_ref=L02 | Revenue > Product | source_label=Product | concept=us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax; standard_concept=N/A; dimension_axis=srt:ProductOrServiceAxis; dimension_member=us-gaap_ProductMember; dimension_label=srt:ProductOrServiceAxis: Product | values: FY26=$64,696,000,000, FY25=$63,946,000,000, FY24=$64,773,000,000 | movement: FY26 abs=+$750,000,000, growth=+1.2%; FY25 abs=-$827,000,000, growth=-1.3%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+19.5%, bps change=-320 bps; FY25=+22.7%, bps change=-373 bps; FY24=+26.4%, bps change=N/A | 2Y CAGR=-0.1%\nline_ref=L03 | Revenue > Service and Other | source_label=Service and Other | concept=us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax; standard_concept=N/A; dimension_axis=srt:ProductOrServiceAxis; dimension_member=us-gaap_ServiceOtherMember; dimension_label=srt:ProductOrServiceAxis: Service and Other | values: FY26=$267,143,000,000, FY25=$217,778,000,000, FY24=$180,349,000,000 | movement: FY26 abs=+$49,365,000,000, growth=+22.7%; FY25 abs=+$37,429,000,000, growth=+20.8%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+80.5%, bps change=+320 bps; FY25=+77.3%, bps change=+373 bps; FY24=+73.6%, bps change=N/A | 2Y CAGR=+21.7%\nline_ref=L04 | Cost of revenue | source_label=Cost of revenue | concept=us-gaap_CostOfGoodsAndServicesSold; standard_concept=CostOfGoodsAndServicesSold | values: FY26=$106,374,000,000, FY25=$87,831,000,000, FY24=$74,114,000,000 | movement: FY26 abs=+$18,543,000,000, growth=+21.1%; FY25 abs=+$13,717,000,000, growth=+18.5%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+32.1%, bps change=+88 bps; FY25=+31.2%, bps change=+94 bps; FY24=+30.2%, bps change=N/A | 2Y CAGR=+19.8%\nline_ref=L05 | Cost of revenue > Product | source_label=Product | concept=us-gaap_CostOfGoodsAndServicesSold; standard_concept=N/A; dimension_axis=srt:ProductOrServiceAxis; dimension_member=us-gaap_ProductMember; dimension_label=srt:ProductOrServiceAxis: Product | values: FY26=$12,098,000,000, FY25=$13,501,000,000, FY24=$15,272,000,000 | movement: FY26 abs=-$1,403,000,000, growth=-10.4%; FY25 abs=-$1,771,000,000, growth=-11.6%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+3.6%, bps change=-115 bps; FY25=+4.8%, bps change=-144 bps; FY24=+6.2%, bps change=N/A | 2Y CAGR=-11.0%\nline_ref=L06 | Cost of revenue > Service and Other | source_label=Service and Other | concept=us-gaap_CostOfGoodsAndServicesSold; standard_concept=N/A; dimension_axis=srt:ProductOrServiceAxis; dimension_member=us-gaap_ServiceOtherMember; dimension_label=srt:ProductOrServiceAxis: Service and Other | values: FY26=$94,276,000,000, FY25=$74,330,000,000, FY24=$58,842,000,000 | movement: FY26 abs=+$19,946,000,000, growth=+26.8%; FY25 abs=+$15,488,000,000, growth=+26.3%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+28.4%, bps change=+203 bps; FY25=+26.4%, bps change=+238 bps; FY24=+24.0%, bps change=N/A | 2Y CAGR=+26.6%\nline_ref=L07 | Gross profit (reported label: Gross margin) | source_label=Gross margin | concept=us-gaap_GrossProfit; standard_concept=GrossProfit | values: FY26=$225,465,000,000, FY25=$193,893,000,000, FY24=$171,008,000,000 | movement: FY26 abs=+$31,572,000,000, growth=+16.3%; FY25 abs=+$22,885,000,000, growth=+13.4%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+67.9%, bps change=-88 bps; FY25=+68.8%, bps change=-94 bps; FY24=+69.8%, bps change=N/A | 2Y CAGR=+14.8%\nline_ref=L08 | Research and development | source_label=Research and development | concept=us-gaap_ResearchAndDevelopmentExpense; standard_concept=ResearchAndDevelopmentExpenses | values: FY26=$35,562,000,000, FY25=$32,488,000,000, FY24=$29,510,000,000 | movement: FY26 abs=+$3,074,000,000, growth=+9.5%; FY25 abs=+$2,978,000,000, growth=+10.1%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+10.7%, bps change=-82 bps; FY25=+11.5%, bps change=-51 bps; FY24=+12.0%, bps change=N/A | 2Y CAGR=+9.8%\nline_ref=L09 | Sales and marketing | source_label=Sales and marketing | concept=us-gaap_SellingAndMarketingExpense; standard_concept=SellingGeneralAndAdminExpenses | values: FY26=$26,710,000,000, FY25=$25,654,000,000, FY24=$24,456,000,000 | movement: FY26 abs=+$1,056,000,000, growth=+4.1%; FY25 abs=+$1,198,000,000, growth=+4.9%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+8.0%, bps change=-106 bps; FY25=+9.1%, bps change=-87 bps; FY24=+10.0%, bps change=N/A | 2Y CAGR=+4.5%\nline_ref=L10 | General and administrative | source_label=General and administrative | concept=us-gaap_GeneralAndAdministrativeExpense; standard_concept=SellingGeneralAndAdminExpenses | values: FY26=$7,956,000,000, FY25=$7,223,000,000, FY24=$7,609,000,000 | movement: FY26 abs=+$733,000,000, growth=+10.1%; FY25 abs=-$386,000,000, growth=-5.1%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+2.4%, bps change=-17 bps; FY25=+2.6%, bps change=-54 bps; FY24=+3.1%, bps change=N/A | 2Y CAGR=+2.3%\nline_ref=L11 | Operating income | source_label=Operating income | concept=us-gaap_OperatingIncomeLoss; standard_concept=OperatingIncomeLoss | values: FY26=$155,237,000,000, FY25=$128,528,000,000, FY24=$109,433,000,000 | movement: FY26 abs=+$26,709,000,000, growth=+20.8%; FY25 abs=+$19,095,000,000, growth=+17.4%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+46.8%, bps change=+116 bps; FY25=+45.6%, bps change=+98 bps; FY24=+44.6%, bps change=N/A | 2Y CAGR=+19.1%\nline_ref=L12 | Other income (expense), net | source_label=Other income (expense), net | concept=us-gaap_NonoperatingIncomeExpense; standard_concept=NonoperatingIncomeExpense | values: FY26=$10,697,000,000, FY25=-$4,901,000,000, FY24=-$1,646,000,000 | movement: FY26 abs=+$15,598,000,000, growth=N/A; FY25 abs=-$3,255,000,000, growth=N/A; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+3.2%, bps change=+496 bps; FY25=-1.7%, bps change=-107 bps; FY24=-0.7%, bps change=N/A | 2Y CAGR=N/A\nline_ref=L13 | Income before income taxes | source_label=Income before income taxes | concept=us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest; standard_concept=PretaxIncomeLoss | values: FY26=$165,934,000,000, FY25=$123,627,000,000, FY24=$107,787,000,000 | movement: FY26 abs=+$42,307,000,000, growth=+34.2%; FY25 abs=+$15,840,000,000, growth=+14.7%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+50.0%, bps change=+612 bps; FY25=+43.9%, bps change=-9 bps; FY24=+44.0%, bps change=N/A | 2Y CAGR=+24.1%\nline_ref=L14 | Provision for income taxes | source_label=Provision for income taxes | concept=us-gaap_IncomeTaxExpenseBenefit; standard_concept=IncomeTaxes | values: FY26=$32,185,000,000, FY25=$21,795,000,000, FY24=$19,651,000,000 | movement: FY26 abs=+$10,390,000,000, growth=+47.7%; FY25 abs=+$2,144,000,000, growth=+10.9%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+9.7%, bps change=+196 bps; FY25=+7.7%, bps change=-28 bps; FY24=+8.0%, bps change=N/A | 2Y CAGR=+28.0%\nline_ref=L15 | Net income | source_label=Net income | concept=us-gaap_NetIncomeLoss; standard_concept=NetIncome | values: FY26=$133,749,000,000, FY25=$101,832,000,000, FY24=$88,136,000,000 | movement: FY26 abs=+$31,917,000,000, growth=+31.3%; FY25 abs=+$13,696,000,000, growth=+15.5%; FY24 abs=N/A, growth=N/A | common-size (% revenue): FY26=+40.3%, bps change=+416 bps; FY25=+36.1%, bps change=+19 bps; FY24=+36.0%, bps change=N/A | 2Y CAGR=+23.2%\n\n## Margins and rates\nline_ref=L07 | Gross margin ratio (source GrossProfit) | levels: FY26=+67.9%; FY25=+68.8%; FY24=+69.8% | bps change: FY26=-88 bps; FY25=-94 bps; FY24=N/A\nline_ref=L11 | Operating margin (source OperatingIncomeLoss) | levels: FY26=+46.8%; FY25=+45.6%; FY24=+44.6% | bps change: FY26=+116 bps; FY25=+98 bps; FY24=N/A\nline_ref=L13 | Pretax margin (source PretaxIncomeLoss) | levels: FY26=+50.0%; FY25=+43.9%; FY24=+44.0% | bps change: FY26=+612 bps; FY25=-9 bps; FY24=N/A\nline_ref=L15 | Net margin (source NetIncome) | levels: FY26=+40.3%; FY25=+36.1%; FY24=+36.0% | bps change: FY26=+416 bps; FY25=+19 bps; FY24=N/A\nline_ref=L14 | Effective tax rate (source IncomeTaxes) | levels: FY26=+19.4%; FY25=+17.6%; FY24=+18.2% | bps change: FY26=+177 bps; FY25=-60 bps; FY24=N/A\n\n## EPS and shares\nline_ref=L17 | EPS Basic | concept=us-gaap_EarningsPerShareBasic; standard_concept=N/A | values: FY26=$18, FY25=$13.7, FY24=$11.86 | movement: FY26 abs=+$4.3, growth=+31.4%; FY25 abs=+$1.84, growth=+15.5%; FY24 abs=N/A, growth=N/A\nline_ref=L18 | EPS Diluted | concept=us-gaap_EarningsPerShareDiluted; standard_concept=N/A | values: FY26=$17.95, FY25=$13.64, FY24=$11.8 | movement: FY26 abs=+$4.31, growth=+31.6%; FY25 abs=+$1.84, growth=+15.6%; FY24 abs=N/A, growth=N/A\nline_ref=L20 | shares Basic | concept=us-gaap_WeightedAverageNumberOfSharesOutstandingBasic; standard_concept=SharesAverage | values: FY26=7,429,000,000, FY25=7,433,000,000, FY24=7,431,000,000 | movement: FY26 abs=-4,000,000 shares, growth=-0.1%; FY25 abs=+2,000,000 shares, growth=+0.0%; FY24 abs=N/A shares, growth=N/A\nline_ref=L21 | shares Diluted | concept=us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding; standard_concept=SharesFullyDilutedAverage | values: FY26=7,453,000,000, FY25=7,465,000,000, FY24=7,469,000,000 | movement: FY26 abs=-12,000,000 shares, growth=-0.2%; FY25 abs=-4,000,000 shares, growth=-0.1%; FY24 abs=N/A shares, growth=N/A\n",
+  "result": {
+    "findings": [
+      {
+        "rank": 1,
+        "title": "FY26 earnings acceleration includes a major non-operating reversal",
+        "importance": "high",
+        "affected_line_refs": [
+          "L11",
+          "L12",
+          "L13",
+          "L14",
+          "L15"
+        ],
+        "observation": "Other income (expense), net moved from -$4.901 billion in FY25 to +$10.697 billion in FY26, a +$15.598 billion change. Pretax income consequently grew 34.2% and pretax margin increased 612 bps to 50.0%, while operating income grew 20.8%. Tax expense grew 47.7%, effective tax rate increased from 17.6% to 19.4%, and net income grew 31.3%.",
+        "why_it_matters": "The FY26 pretax and net-income acceleration was materially affected by the non-operating sign reversal and a higher tax rate. The reported P&L does not identify the composition, recurrence, or tax drivers of these items.",
+        "investigation_questions": [
+          "What disclosed components comprise FY26 other income and the FY25 other expense, and what drove the sign reversal?",
+          "Which disclosed tax items or changes explain the effective tax rate increase to 19.4%?",
+          "How do the filing's operating and non-operating components reconcile to the FY26 pretax income increase?"
+        ]
+      },
+      {
+        "rank": 2,
+        "title": "Service and other revenue is gaining mix while its cost intensity rises",
+        "importance": "high",
+        "affected_line_refs": [
+          "L01",
+          "L02",
+          "L03",
+          "L04",
+          "L05",
+          "L06",
+          "L07"
+        ],
+        "observation": "Service and other revenue grew 22.7% in FY26 and had a 21.7% two-year CAGR, increasing to 80.5% of revenue from 73.6% in FY24. Product revenue was nearly flat in FY26 at +1.2% and had a -0.1% two-year CAGR, with mix declining to 19.5% from 26.4%. Service and other cost grew 26.8% and reached 28.4% of revenue, up 203 bps, while gross margin declined 88 bps to 67.9%.",
+        "why_it_matters": "The business mix is shifting substantially toward service and other revenue, but the associated cost line is growing faster than that revenue. Filing detail is needed to distinguish mix effects from changes within the product and service categories.",
+        "investigation_questions": [
+          "What disclosed subcomponents or contract categories explain the growth in service and other revenue versus product revenue stagnation?",
+          "What drove service and other cost growth of 26.8% and its 203-bps increase in revenue intensity?",
+          "How much of the gross-margin decline reflects category mix versus margin changes within product and service categories?"
+        ]
+      },
+      {
+        "rank": 3,
+        "title": "Operating expense intensity is declining and expanding operating margin",
+        "importance": "medium",
+        "affected_line_refs": [
+          "L01",
+          "L08",
+          "L09",
+          "L10",
+          "L11"
+        ],
+        "observation": "Against FY26 revenue growth of 17.8%, research and development grew 9.5%, sales and marketing 4.1%, and general and administrative 10.1%. Their revenue intensities declined by 82, 106, and 17 bps, respectively. Operating income grew 20.8%, and operating margin reached 46.8%, up 116 bps after a 98-bps increase in FY25.",
+        "why_it_matters": "Operating margin expanded despite gross-margin pressure, indicating that below-gross-profit expense intensity was an important offset. The P&L alone does not show which expense components or disclosed factors drove the improvement, including the reversal from a 5.1% G&A decline in FY25 to 10.1% growth in FY26.",
+        "investigation_questions": [
+          "Which disclosed expense subcategories drove the reductions in R&D, sales and marketing, and G&A intensity?",
+          "What explains the change in G&A from -5.1% growth in FY25 to +10.1% in FY26?",
+          "How do the filing disclosures attribute the operating-margin expansion between gross profit and operating expenses?"
+        ]
+      },
+      {
+        "rank": 4,
+        "title": "EPS growth largely passes through net-income growth with stable share counts",
+        "importance": "low",
+        "affected_line_refs": [
+          "L15",
+          "L17",
+          "L18",
+          "L20",
+          "L21"
+        ],
+        "observation": "Basic EPS grew 31.4% in FY26 and diluted EPS grew 31.6%, closely tracking net-income growth of 31.3%. Basic average shares declined 0.1% and diluted average shares declined 0.2% in FY26; diluted shares also declined 0.1% in FY25. Basic and diluted EPS remained closely aligned in each reported period.",
+        "why_it_matters": "The per-share result appears primarily tied to reported net-income growth rather than a material change in average shares, but the P&L context does not explain the small basic-to-diluted difference or the share-count movements.",
+        "investigation_questions": [
+          "What disclosed instruments or events explain the basic-to-diluted EPS difference in each period?",
+          "What filing disclosures explain the FY26 changes in basic and diluted weighted-average shares?",
+          "Were there any material potentially dilutive instruments affecting the diluted share calculation?"
+        ]
+      }
+    ]
+  }
+}

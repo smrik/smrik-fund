@@ -206,6 +206,168 @@ class PreparePnlTests(TestCase):
             0.2,
         )
 
+    def test_prepare_pnl_calculates_guarded_changes_and_two_year_cagr(self) -> None:
+        source = make_income_statement()
+        pnl = prepare_pnl(source, years=3)
+
+        revenue = pnl.loc[pnl["standard_concept"] == "Revenue"].iloc[0]
+        self.assertAlmostEqual(
+            revenue[metric_column("absolute_yoy_change", PERIODS[0])], 20.0
+        )
+        self.assertAlmostEqual(
+            revenue[metric_column("yoy_growth", PERIODS[0])], 0.2
+        )
+        self.assertAlmostEqual(
+            revenue["two_year_cagr"], (120.0 / 80.0) ** 0.5 - 1.0
+        )
+
+        negative = pnl.loc[
+            pnl["standard_concept"] == "NonoperatingIncomeExpense"
+        ].iloc[0]
+        self.assertTrue(pd.isna(negative[metric_column("yoy_growth", PERIODS[1])]))
+        self.assertEqual(
+            negative[metric_column("absolute_yoy_change", PERIODS[1])], -1.0
+        )
+        self.assertTrue(pd.isna(negative[metric_column("yoy_growth", PERIODS[0])]))
+        self.assertEqual(
+            negative[metric_column("absolute_yoy_change", PERIODS[0])], 8.0
+        )
+        self.assertTrue(pd.isna(negative["two_year_cagr"]))
+
+        zero_prior = source.copy(deep=True)
+        zero_prior.loc[zero_prior["standard_concept"] == "Revenue", PERIODS[1]] = 0.0
+        zero_pnl = prepare_pnl(zero_prior, years=3)
+        zero_revenue = zero_pnl.loc[
+            zero_pnl["standard_concept"] == "Revenue"
+        ].iloc[0]
+        self.assertTrue(pd.isna(zero_revenue[metric_column("yoy_growth", PERIODS[0])]))
+        self.assertEqual(
+            zero_revenue[metric_column("absolute_yoy_change", PERIODS[0])], 120.0
+        )
+
+        zero_endpoint = source.copy(deep=True)
+        zero_endpoint.loc[
+            zero_endpoint["standard_concept"] == "Revenue", PERIODS[2]
+        ] = 0.0
+        zero_endpoint_pnl = prepare_pnl(zero_endpoint, years=3)
+        self.assertTrue(
+            pd.isna(
+                zero_endpoint_pnl.loc[
+                    zero_endpoint_pnl["standard_concept"] == "Revenue"
+                ].iloc[0]["two_year_cagr"]
+            )
+        )
+
+        missing = pnl.loc[
+            pnl["standard_concept"] == "ResearchAndDevelopmentExpenses"
+        ].iloc[0]
+        for metric in (
+            "absolute_yoy_change",
+            "yoy_growth",
+            "percent_of_revenue",
+            "percent_of_revenue_bps_change",
+        ):
+            self.assertTrue(pd.isna(missing[metric_column(metric, PERIODS[0])]))
+        self.assertTrue(pd.isna(missing["two_year_cagr"]))
+
+    def test_prepare_pnl_calculates_common_size_and_bps_movements(self) -> None:
+        source = make_income_statement()
+        source.loc[
+            source["standard_concept"] == "CostOfGoodsAndServicesSold", PERIODS[0]
+        ] = 66.0
+        pnl = prepare_pnl(source, years=3)
+
+        cost = pnl.loc[
+            pnl["standard_concept"] == "CostOfGoodsAndServicesSold"
+        ].iloc[0]
+        self.assertAlmostEqual(
+            cost[metric_column("percent_of_revenue", PERIODS[0])], 0.55
+        )
+        self.assertAlmostEqual(
+            cost[metric_column("percent_of_revenue_bps_change", PERIODS[0])], 500.0
+        )
+        self.assertTrue(
+            pd.isna(cost[metric_column("percent_of_revenue_bps_change", PERIODS[2])])
+        )
+
+    def test_prepare_pnl_excludes_eps_and_share_common_size_metrics(self) -> None:
+        extra_rows = pd.DataFrame(
+            {
+                "concept": [
+                    "us-gaap_EarningsPerShareBasic",
+                    "us-gaap_WeightedAverageNumberOfSharesOutstandingBasic",
+                    "custom_shares",
+                    "custom_revenue_per_share",
+                ],
+                "label": [
+                    "Basic EPS",
+                    "Basic shares",
+                    "Shares outstanding",
+                    "Revenue per share",
+                ],
+                "standard_concept": [
+                    None,
+                    "SharesAverage",
+                    "CustomMetric",
+                    "CustomMetric",
+                ],
+                PERIODS[0]: [18.0, 7429.0, 7430.0, 2.0],
+                PERIODS[1]: [13.7, 7433.0, 7431.0, 1.8],
+                PERIODS[2]: [11.86, 7431.0, 7432.0, 1.6],
+                "abstract": [False, False, False, False],
+            }
+        )
+        pnl = prepare_pnl(
+            pd.concat([make_income_statement(), extra_rows], ignore_index=True)
+        )
+
+        for label in ("Basic EPS", "Basic shares", "Shares outstanding", "Revenue per share"):
+            row = pnl.loc[pnl["label"] == label].iloc[0]
+            for period in PERIODS[:3]:
+                self.assertTrue(pd.isna(row[metric_column("percent_of_revenue", period)]))
+                self.assertTrue(
+                    pd.isna(
+                        row[metric_column("percent_of_revenue_bps_change", period)]
+                    )
+                )
+            self.assertTrue(pd.notna(row[metric_column("yoy_growth", PERIODS[0])]))
+            self.assertTrue(pd.notna(row["two_year_cagr"]))
+
+    def test_prepare_pnl_preserves_monetary_gross_profit_with_margin_label(self) -> None:
+        source = make_income_statement()
+        source.loc[source["standard_concept"] == "GrossProfit", "label"] = "Gross margin"
+
+        pnl = prepare_pnl(source)
+        gross_profit = pnl.loc[pnl["standard_concept"] == "GrossProfit"].iloc[0]
+
+        self.assertAlmostEqual(
+            gross_profit[metric_column("percent_of_revenue", PERIODS[0])], 0.5
+        )
+
+    def test_prepare_pnl_exposes_all_margin_levels_and_bps_changes(self) -> None:
+        source = make_income_statement()
+        source.loc[
+            source["standard_concept"] == "GrossProfit", PERIODS[0]
+        ] = 66.0
+        source.loc[
+            source["standard_concept"] == "OperatingIncomeLoss", PERIODS[0]
+        ] = 33.0
+        pnl = prepare_pnl(source, years=3)
+
+        expected = {
+            "GrossProfit": ("gross_margin", 0.55, 500.0),
+            "OperatingIncomeLoss": ("operating_margin", 0.275, 250.0),
+            "PretaxIncomeLoss": ("pretax_margin", 35.0 / 120.0, (35.0 / 120.0 - 0.3) * 10_000),
+            "NetIncome": ("net_margin", 28.0 / 120.0, (28.0 / 120.0 - 0.24) * 10_000),
+            "IncomeTaxes": ("effective_tax_rate", 0.2, 0.0),
+        }
+        for concept, (metric, level, bps) in expected.items():
+            row = pnl.loc[pnl["standard_concept"] == concept].iloc[0]
+            self.assertAlmostEqual(row[metric_column(metric, PERIODS[0])], level)
+            self.assertAlmostEqual(
+                row[metric_column(f"{metric}_bps_change", PERIODS[0])], bps
+            )
+
     def test_prepare_pnl_rejects_too_few_annual_periods(self) -> None:
         source = make_income_statement().drop(columns=[PERIODS[2], PERIODS[3]])
 
