@@ -50,6 +50,20 @@ from .ingestion.filing import (
 	retrieve_filing_evidence,
 	validate_evidence_refs,
 )
+from .ingestion.filing_investigation import (
+	DEFAULT_MODEL as INVESTIGATION_DEFAULT_MODEL,
+)
+from .ingestion.filing_investigation import (
+	DEFAULT_REASONING_EFFORT as INVESTIGATION_DEFAULT_REASONING_EFFORT,
+)
+from .ingestion.filing_investigation import (
+	FilingInvestigationError,
+	investigate_finding,
+	latest_scan_path,
+	load_saved_scan,
+	render_finding_investigation_summary,
+	select_saved_finding,
+)
 from .ingestion.reconciliation import (
 	reconcile_pnl,
 	save_reconciliation_checks,
@@ -66,6 +80,7 @@ from .ingestion.risk_gate import (
 from .ingestion.statements import (
 	ANNUAL_PERIOD_PATTERN,
 	build_analytical_pnl,
+	get_latest_filing,
 	load_analytical_pnl,
 	save_analytical_pnl,
 )
@@ -225,7 +240,9 @@ def _target_row_key(pnl: pd.DataFrame, target_line: object) -> str:
 			"candidate target line is missing or ambiguous; row identity is unsafe"
 		) from exc
 	if _is_derived_line(pnl, line_index):
-		raise FilingEvidenceError("candidate target line is missing, ambiguous, or derived")
+		raise FilingEvidenceError(
+			"candidate target line is missing, ambiguous, or derived"
+		)
 
 	def text_value(value: object) -> str | None:
 		try:
@@ -278,8 +295,7 @@ def _target_row_key(pnl: pd.DataFrame, target_line: object) -> str:
 				]
 				if len(duplicate_rows) == 1:
 					return (
-						f"standard_concept:{standard_concept}|"
-						f"{field}:{metadata_value}"
+						f"standard_concept:{standard_concept}|{field}:{metadata_value}"
 					)
 			raise FilingEvidenceError("candidate target row has no stable selector")
 
@@ -313,7 +329,9 @@ def _candidate_identity(
 			"candidate target line is missing, ambiguous, or derived"
 		) from exc
 	if _is_derived_line(pnl, line_index):
-		raise FilingEvidenceError("candidate target line is missing, ambiguous, or derived")
+		raise FilingEvidenceError(
+			"candidate target line is missing, ambiguous, or derived"
+		)
 	if _reported_source_value(pnl, candidate.target_line, candidate.period) is None:
 		raise FilingEvidenceError("candidate target value is missing or non-finite")
 	if not valid_item_key(candidate.item_key):
@@ -385,11 +403,7 @@ def _history_identity_lookup(
 			"version": 0,
 			"reason": "candidate identity is invalid",
 		}
-	matching_rows = [
-		row
-		for row in identity_rows
-		if row["_identity"] == identity_parts
-	]
+	matching_rows = [row for row in identity_rows if row["_identity"] == identity_parts]
 	occupied_rows = [
 		row
 		for row in identity_rows
@@ -412,8 +426,7 @@ def _history_identity_lookup(
 		for row in identity_rows
 		if row["_identity"]["company"] == identity_parts["company"]
 		and row["_identity"]["fiscal_period"] == identity_parts["fiscal_period"]
-		and row["_identity"]["target_row_key"].split("|", 1)[0]
-		== selector_family
+		and row["_identity"]["target_row_key"].split("|", 1)[0] == selector_family
 	]
 	if not matching_rows:
 		if occupied_rows:
@@ -457,7 +470,9 @@ def _history_identity_lookup(
 		latest = max(approved_rows, key=lambda row: row["version"])
 	latest_version = latest["version"]
 	status = str(latest.get("status", ""))
-	if _canonical_history_json(latest.get("candidate_state")) != _canonical_history_json(state):
+	if _canonical_history_json(
+		latest.get("candidate_state")
+	) != _canonical_history_json(state):
 		return {
 			"status": "state_conflict",
 			"adjustment_id": adjustment_id,
@@ -501,9 +516,7 @@ def _materiality_metrics(
 	denominators = {
 		"pct_revenue": _reported_source_value(pnl, "Revenue", period),
 		"pct_target_line": _reported_source_value(pnl, candidate.target_line, period),
-		"pct_operating_income": _reported_source_value(
-			pnl, "Operating income", period
-		),
+		"pct_operating_income": _reported_source_value(pnl, "Operating income", period),
 	}
 	return {
 		name: (
@@ -565,7 +578,11 @@ def build_normalization_summary(
 				"exact",
 				"|".join(
 					"" if value is None else str(value).strip().casefold()
-					for value in (topic, candidate.get("target_line"), candidate.get("sub_item"))
+					for value in (
+						topic,
+						candidate.get("target_line"),
+						candidate.get("sub_item"),
+					)
 				),
 			)
 		)
@@ -574,9 +591,7 @@ def build_normalization_summary(
 			{
 				"group_key": f"{key[0]}:{key[1]}",
 				"item": (
-					candidate.get("sub_item")
-					or candidate.get("target_line")
-					or topic
+					candidate.get("sub_item") or candidate.get("target_line") or topic
 				),
 				"target_line": candidate.get("target_line"),
 				"sub_item": candidate.get("sub_item"),
@@ -585,14 +600,18 @@ def build_normalization_summary(
 			},
 		)
 		item_amount = candidate.get("item_amount")
-		line_delta = derive_line_delta(item_amount, candidate.get("item_effect_on_line"))
+		line_delta = derive_line_delta(
+			item_amount, candidate.get("item_effect_on_line")
+		)
 		period_row = {
 			"period": candidate.get("period"),
 			"item_amount": item_amount,
 			"item_effect_on_line": candidate.get("item_effect_on_line"),
 			"line_delta": line_delta,
 			"amount_basis": candidate.get("amount_basis"),
-			"candidate_ids": [record["adjustment_id"]] if record.get("adjustment_id") else [],
+			"candidate_ids": [record["adjustment_id"]]
+			if record.get("adjustment_id")
+			else [],
 		}
 		review = record.get("review") or {}
 		gate = record.get("gate") or {}
@@ -672,9 +691,7 @@ _GATE_REASON_LABELS = {
 	"aggregate_over_adjustment_or_unknown": (
 		"Aggregate delta would push the line through zero or is unknown"
 	),
-	"source_target_missing_or_unknown": (
-		"Reported target value is missing or unknown"
-	),
+	"source_target_missing_or_unknown": ("Reported target value is missing or unknown"),
 	"individual_over_adjustment_or_unknown": (
 		"Individual delta removes more than the reported line holds or is unknown"
 	),
@@ -707,7 +724,11 @@ def _render_normalization_summary(summary: list[dict[str, Any]]) -> None:
 			if signed:
 				sign = "+" if magnitude >= 0 else "-"
 				magnitude = abs(magnitude)
-			for divisor, suffix in ((1_000_000_000, "bn"), (1_000_000, "mn"), (1_000, "k")):
+			for divisor, suffix in (
+				(1_000_000_000, "bn"),
+				(1_000_000, "mn"),
+				(1_000, "k"),
+			):
 				if magnitude >= divisor:
 					return f"{sign}${magnitude / divisor:.1f}{suffix}"
 			return f"{sign}${magnitude:g}"
@@ -824,9 +845,7 @@ def _run_identity_families(
 					candidate.evidence_refs,
 					require_identity=True,
 				)
-				identity = _candidate_identity(
-					ticker, pnl, candidate, packet_identity
-				)
+				identity = _candidate_identity(ticker, pnl, candidate, packet_identity)
 			except FilingEvidenceError:
 				continue
 			parts = _identity_components(identity)
@@ -947,6 +966,7 @@ def _gate_conditions(
 		elif "affected_lines" not in period_checks:
 			reconciliation_clear = bool(period_checks["status"].eq("PASS").all())
 		else:
+
 			def affects_target(value: object) -> bool:
 				if value is None or pd.isna(value):
 					return False
@@ -958,9 +978,7 @@ def _gate_conditions(
 				period_checks["affected_lines"].map(affects_target)
 			]
 			reconciliation_clear = (
-				True
-				if relevant.empty
-				else bool(relevant["status"].eq("PASS").all())
+				True if relevant.empty else bool(relevant["status"].eq("PASS").all())
 			)
 	source_value = (
 		_reported_source_value(pnl, candidate.target_line, candidate.period)
@@ -1048,9 +1066,7 @@ def _gate_conditions(
 			for other, other_identity in same_run_candidates:
 				other_parts = _identity_components(other_identity)
 				other_row_key = (
-					other_parts["target_row_key"]
-					if other_parts is not None
-					else None
+					other_parts["target_row_key"] if other_parts is not None else None
 				)
 				if (
 					not same_target_period(
@@ -1073,9 +1089,7 @@ def _gate_conditions(
 			aggregate += line_delta
 			aggregate_over_adjustment = _crosses_zero(source_value, aggregate)
 	if group_facts is None:
-		group_reconciles = (
-			True if not getattr(candidate, "group_id", None) else None
-		)
+		group_reconciles = True if not getattr(candidate, "group_id", None) else None
 	else:
 		group_reconciles = group_facts.get("reconciles")
 	deterministic_checks_pass: bool | None
@@ -1086,9 +1100,7 @@ def _gate_conditions(
 			preview = pd.DataFrame(
 				[
 					{
-						"target_row_key": _target_row_key(
-							pnl, candidate.target_line
-						),
+						"target_row_key": _target_row_key(pnl, candidate.target_line),
 						"target_line": candidate.target_line,
 						"period": candidate.period,
 						"item_amount": candidate.item_amount,
@@ -1273,7 +1285,9 @@ def _run_adjustment_analysis(
 		)
 
 	if work_items:
-		typer.echo(f"Saved Analyst JSON files: {len(work_items)} (see integrated manifest)")
+		typer.echo(
+			f"Saved Analyst JSON files: {len(work_items)} (see integrated manifest)"
+		)
 
 	# Batch recurrence signal: collected before any review so candidate
 	# ordering can never change multi-period evidence.
@@ -1366,8 +1380,10 @@ def _run_adjustment_analysis(
 				}
 			)
 			if lookup["status"] in {"unknown", "identity_unresolved"}:
-				base_record["error"] = lookup.get("reason") or identity_error or (
-					"candidate identity is missing or ambiguous"
+				base_record["error"] = (
+					lookup.get("reason")
+					or identity_error
+					or ("candidate identity is missing or ambiguous")
 				)
 			if lookup["status"] in {"replay", "blocked_existing"}:
 				latest = lookup.get("latest", {})
@@ -1496,7 +1512,8 @@ def _run_adjustment_analysis(
 			records.append(
 				{
 					**base_record,
-					"adjustment_id": lookup["adjustment_id"] or base_record.get("adjustment_id"),
+					"adjustment_id": lookup["adjustment_id"]
+					or base_record.get("adjustment_id"),
 					"candidate": candidate_data,
 					"review": review_data,
 					"review_metadata": review_metadata,
@@ -1510,9 +1527,7 @@ def _run_adjustment_analysis(
 					"automation_preview": {
 						# What the gate WOULD do under the provisional policy.
 						"decision": (
-							"auto_approve"
-							if shadow_auto_approve
-							else "human_review"
+							"auto_approve" if shadow_auto_approve else "human_review"
 						),
 						"canonical_writes_enabled": ENABLE_CANONICAL_AUTO_APPROVAL,
 						"materiality_eligible": materiality_value,
@@ -1528,11 +1543,7 @@ def _run_adjustment_analysis(
 			)
 			if is_approved:
 				adjustment_id = lookup["adjustment_id"] or provisional_id
-				version = (
-					1
-					if lookup["status"] == "new"
-					else int(lookup["version"]) + 1
-				)
+				version = 1 if lookup["status"] == "new" else int(lookup["version"]) + 1
 				metrics = candidate_metrics
 				# The gate blocks auto-approval without a derivable delta, so
 				# every approved row records a provable direction.
@@ -1575,9 +1586,7 @@ def _run_adjustment_analysis(
 						"reviewer_normalization_assessment": review_data[
 							"normalization_assessment"
 						],
-						"reviewer_recurrence_class": review_data[
-							"recurrence_class"
-						],
+						"reviewer_recurrence_class": review_data["recurrence_class"],
 						"multi_period_evidence": multi_period_evidence,
 						# Auto-approval requires eligibility, so an override
 						# reason can only ever come from a human decision.
@@ -1752,14 +1761,14 @@ def _run_adjustment_analysis(
 			status: sum(row.get("status") == status for row in history_rows)
 			for status in ("approved", "proposed")
 		}
-		status_summary = ", ".join(
-			f"{count} {status}"
-			for status, count in status_counts.items()
-			if count
-		) or "0 rows"
+		status_summary = (
+			", ".join(
+				f"{count} {status}" for status, count in status_counts.items() if count
+			)
+			or "0 rows"
+		)
 		typer.echo(
-			f"Adjustment history updated ({status_summary} rows): "
-			f"{history_path}"
+			f"Adjustment history updated ({status_summary} rows): {history_path}"
 		)
 	else:
 		typer.echo(f"Adjustment history unchanged (0 approved rows): {history_path}")
@@ -1835,9 +1844,7 @@ def _decision_context(
 			f"target line {target_line!r} is missing or ambiguous"
 		) from exc
 	if _is_derived_line(pnl, line_index):
-		raise ReviewActionError(
-			f"target line {target_line!r} is a derived subtotal"
-		)
+		raise ReviewActionError(f"target line {target_line!r} is a derived subtotal")
 	reported = _reported_source_value(pnl, target_line, period)
 	if reported is None:
 		raise ReviewActionError(
@@ -1976,7 +1983,9 @@ def _decision_history_row(
 	return row
 
 
-def _append_history_row(history_path: Path, history: pd.DataFrame, row: dict[str, Any]) -> pd.DataFrame:
+def _append_history_row(
+	history_path: Path, history: pd.DataFrame, row: dict[str, Any]
+) -> pd.DataFrame:
 	updated = (
 		pd.DataFrame([row])
 		if history.empty
@@ -1986,7 +1995,9 @@ def _append_history_row(history_path: Path, history: pd.DataFrame, row: dict[str
 	return updated
 
 
-def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFrame) -> None:
+def _review_card(
+	index: int, total: int, record: dict[str, Any], pnl: pd.DataFrame
+) -> None:
 	candidate = record.get("candidate") or {}
 	review = record.get("review") or {}
 	normalization = record.get("normalization") or {}
@@ -2005,9 +2016,7 @@ def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFra
 	typer.echo(
 		f"  Line: {candidate.get('target_line')} | Period: {candidate.get('period')}"
 	)
-	reported_text = (
-		f"{reported:,.0f}" if reported is not None else "n/a"
-	)
+	reported_text = f"{reported:,.0f}" if reported is not None else "n/a"
 	if delta is not None and reported is not None:
 		typer.echo(
 			f"  Proposal: remove {candidate.get('item_amount')} "
@@ -2027,7 +2036,11 @@ def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFra
 	)
 	concerns = review.get("concerns") or []
 	if concerns:
-		typer.echo(f"  Concerns: {concerns[0]} (+{len(concerns) - 1} more)" if len(concerns) > 1 else f"  Concerns: {concerns[0]}")
+		typer.echo(
+			f"  Concerns: {concerns[0]} (+{len(concerns) - 1} more)"
+			if len(concerns) > 1
+			else f"  Concerns: {concerns[0]}"
+		)
 	typer.echo(
 		f"  Eligibility: assessment={normalization.get('assessment')}"
 		f" recurrence={normalization.get('recurrence_class')}"
@@ -2036,9 +2049,7 @@ def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFra
 	preview_text = _automation_preview_text(record.get("automation_preview"))
 	if preview_text:
 		typer.echo(f"  Automation preview: {preview_text}")
-	reasons = [
-		_gate_reason_label(reason) for reason in (gate.get("reasons") or [])
-	]
+	reasons = [_gate_reason_label(reason) for reason in (gate.get("reasons") or [])]
 	if reasons:
 		shown = "; ".join(dict.fromkeys(reasons))
 		typer.echo(f"  Why not automatic: {shown}")
@@ -2046,7 +2057,9 @@ def _review_card(index: int, total: int, record: dict[str, Any], pnl: pd.DataFra
 		typer.echo("  IDENTITY UNRESOLVED — this MVP can only skip this item.")
 
 
-def _rebuild_adjusted_outputs(ticker: str, output_root: Path, pnl: pd.DataFrame) -> None:
+def _rebuild_adjusted_outputs(
+	ticker: str, output_root: Path, pnl: pd.DataFrame
+) -> None:
 	output_directory = output_root / ticker / "03_output"
 	history = _load_adjustment_history(output_directory / "adjustment_history.csv")
 	try:
@@ -2093,7 +2106,6 @@ def _run_review_session(ticker: str, output_root: Path) -> None:
 	history_path = output_root / ticker / "03_output" / "adjustment_history.csv"
 	history = _load_adjustment_history(history_path)
 
-
 	queue = _pending_review_entries(manifest, history)
 	if not queue:
 		typer.echo("Nothing pending human review.")
@@ -2107,11 +2119,15 @@ def _run_review_session(ticker: str, output_root: Path) -> None:
 	decisions = 0
 	for index, record in enumerate(queue, start=1):
 		_review_card(index, len(queue), record, pnl)
-		action = typer.prompt(
-			"[a]ccept / [r]eject / [e]dit amount / [s]kip / [q]uit",
-			type=str,
-			default="s",
-		).strip().lower()
+		action = (
+			typer.prompt(
+				"[a]ccept / [r]eject / [e]dit amount / [s]kip / [q]uit",
+				type=str,
+				default="s",
+			)
+			.strip()
+			.lower()
+		)
 
 		if action == "q":
 			break
@@ -2188,10 +2204,14 @@ def _run_review_session(ticker: str, output_root: Path) -> None:
 					if not context.get("adjustment_id"):
 						context["adjustment_id"] = _next_adjustment_id(history)
 				if context["crosses_zero"]:
-					confirm = typer.prompt(
-						"WARNING: removes more than the reported line holds. Type yes to confirm",
-						default="no",
-					).strip().lower()
+					confirm = (
+						typer.prompt(
+							"WARNING: removes more than the reported line holds. Type yes to confirm",
+							default="no",
+						)
+						.strip()
+						.lower()
+					)
 					if confirm != "yes":
 						typer.echo("Not confirmed; skipped.")
 						continue
@@ -2209,9 +2229,7 @@ def _run_review_session(ticker: str, output_root: Path) -> None:
 						"approval would break adjusted reconciliation; refused"
 					)
 				label = "Approved" if action == "a" else "Approved edited amount"
-				typer.echo(
-					f"{label} as {row['adjustment_id']} v{row['version']}."
-				)
+				typer.echo(f"{label} as {row['adjustment_id']} v{row['version']}.")
 
 			history = _append_history_row(history_path, history, row)
 			decisions += 1
@@ -2308,6 +2326,91 @@ def analyze(
 			)
 		except AdjustmentAnalysisError as exc:
 			typer.echo(f"Adjustment analysis unavailable: {exc}", err=True)
+
+
+@app.command()
+def investigate(
+	ticker: str,
+	finding_rank: int = typer.Option(
+		default=1,
+		help="Saved Analytical Scan finding rank to investigate.",
+	),
+	scan_file: Path | None = typer.Option(
+		default=None,
+		help="Saved analytical_scan JSON; newest scan is used when omitted.",
+	),
+	model: str = typer.Option(
+		default=INVESTIGATION_DEFAULT_MODEL,
+		help="OpenAI model for the bounded investigation.",
+	),
+	reasoning_effort: str = typer.Option(
+		default=INVESTIGATION_DEFAULT_REASONING_EFFORT,
+		help="OpenAI reasoning effort for the investigation.",
+	),
+	output_root: Path = typer.Option(
+		default=Path("data"),
+		help="Workspace root containing data outputs.",
+	),
+) -> None:
+	"""Investigate one saved Analytical Scan finding from its filing."""
+	normalized_ticker = ticker.strip().upper()
+	try:
+		pnl = load_analytical_pnl(normalized_ticker, output_root)
+		selected_scan = scan_file or latest_scan_path(normalized_ticker, output_root)
+		scan_result, _first_finding, scan_context, scan_metadata = load_saved_scan(
+			selected_scan,
+			normalized_ticker,
+			pnl,
+		)
+		finding = select_saved_finding(scan_result, finding_rank)
+		filing = get_latest_filing(normalized_ticker)
+		expected_accession = str(scan_metadata.get("filing_accession") or "").strip()
+		actual_accession = ""
+		for name in ("accession_no", "accession_number"):
+			value = getattr(filing, name, None)
+			if value is not None and str(value).strip():
+				actual_accession = str(value).strip()
+				break
+		if not expected_accession:
+			raise FilingInvestigationError(
+				"saved scan metadata is missing filing_accession"
+			)
+		if not actual_accession or actual_accession != expected_accession:
+			raise FilingInvestigationError(
+				"latest filing accession does not match saved Analytical Scan"
+			)
+		payload, artifact_path = investigate_finding(
+			normalized_ticker,
+			pnl,
+			filing,
+			finding,
+			scan_path=selected_scan,
+			scan_metadata=scan_metadata,
+			scan_context=scan_context,
+			output_root=output_root,
+			# EdgarTools standard-statement monetary columns are reported USD;
+			# make the comparison unit explicit at this boundary.
+			observed_unit="dollars",
+			model=model,
+			reasoning_effort=reasoning_effort,
+		)
+	except (
+		FileNotFoundError,
+		OSError,
+		FilingInvestigationError,
+		ValueError,
+		TypeError,
+	) as exc:
+		raise typer.BadParameter(str(exc)) from exc
+
+	typer.echo(f"Saved finding investigation: {artifact_path}")
+	typer.echo(render_finding_investigation_summary(payload))
+	if payload.get("status") != "completed":
+		typer.echo(
+			f"Investigation status: {payload.get('status')}"
+			f" ({payload.get('error_message', 'see artifact')})",
+			err=True,
+		)
 
 
 @app.command()

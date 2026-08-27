@@ -46,6 +46,11 @@ class AnalyticalScanFinding(BaseModel):
 	investigation_questions: list[str] = Field(default_factory=list, max_length=3)
 
 
+# Public vocabulary for downstream finding-focused workflows.  The alias keeps
+# the persisted scan schema and validation behavior unchanged.
+ScanFinding = AnalyticalScanFinding
+
+
 class AnalyticalScanResult(BaseModel):
 	model_config = ConfigDict(extra="forbid")
 
@@ -91,7 +96,11 @@ def _number(value: object) -> float | None:
 def _annual_periods(pnl: pd.DataFrame) -> list[str]:
 	if not isinstance(pnl, pd.DataFrame):
 		raise TypeError("pnl must be a pandas DataFrame")
-	periods = [column for column in pnl.columns if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)]
+	periods = [
+		column
+		for column in pnl.columns
+		if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
+	]
 	if len(periods) < 3:
 		raise ValueError("analytical P&L must contain at least 3 annual FY periods")
 	return periods[:3]
@@ -106,38 +115,77 @@ def _value(row: pd.Series, period: str) -> float | None:
 
 
 def _is_dimension(row: pd.Series) -> bool:
-	return any(_truthy(row.get(column)) for column in ("dimension", "is_breakdown", "dimension_axis", "dimension_member", "dimension_label"))
+	return any(
+		_truthy(row.get(column))
+		for column in (
+			"dimension",
+			"is_breakdown",
+			"dimension_axis",
+			"dimension_member",
+			"dimension_label",
+		)
+	)
 
 
 def _source_label(row: pd.Series) -> str:
-	return _clean(row.get("label")) or _clean(row.get("concept")) or "Unnamed source line"
+	return (
+		_clean(row.get("label")) or _clean(row.get("concept")) or "Unnamed source line"
+	)
 
 
 def _role(row: pd.Series) -> str:
-	raw_text = " ".join(_clean(row.get(column)).casefold() for column in ("concept", "standard_concept", "label"))
+	raw_text = " ".join(
+		_clean(row.get(column)).casefold()
+		for column in ("concept", "standard_concept", "label")
+	)
 	text = " ".join(
 		_normalized(row.get(column))
 		for column in ("concept", "standard_concept", "label")
 	)
-	markers = ("earningspershare", "weightedaveragenumberofshares", "sharesaverage", "sharesfullydilutedaverage", "sharesoutstanding", "sharecount", "pershare")
+	markers = (
+		"earningspershare",
+		"weightedaveragenumberofshares",
+		"sharesaverage",
+		"sharesfullydilutedaverage",
+		"sharesoutstanding",
+		"sharecount",
+		"pershare",
+	)
 	if any(marker in text for marker in markers) or re.search(r"\beps\b", raw_text):
 		return "shares" if "share" in text and "earningspershare" not in text else "eps"
 	return "monetary"
 
 
 def _is_noise(row: pd.Series) -> bool:
-	text = " ".join(_normalized(row.get(column)) for column in ("concept", "standard_concept", "label"))
-	return _truthy(row.get("abstract")) or _normalized(row.get("standard_concept")).endswith("abstract") or _normalized(row.get("concept")).endswith("abstract") or any(marker in text for marker in ("xbrlnoise", "xbrlonly"))
+	text = " ".join(
+		_normalized(row.get(column))
+		for column in ("concept", "standard_concept", "label")
+	)
+	return (
+		_truthy(row.get("abstract"))
+		or _normalized(row.get("standard_concept")).endswith("abstract")
+		or _normalized(row.get("concept")).endswith("abstract")
+		or any(marker in text for marker in ("xbrlnoise", "xbrlonly"))
+	)
 
 
 def _is_ratio_line(row: pd.Series) -> bool:
 	# GrossProfit stays monetary despite its possible "Gross margin" label.
 	if _clean(row.get("standard_concept")) == "GrossProfit":
 		return False
-	fields = [_clean(row.get(column)).casefold() for column in ("concept", "standard_concept", "label")]
+	fields = [
+		_clean(row.get(column)).casefold()
+		for column in ("concept", "standard_concept", "label")
+	]
 	text = " ".join(fields)
 	standard = _normalized(row.get("standard_concept"))
-	return any(re.search(rf"\b{marker}\b", text) is not None for marker in ("margin", "ratio", "rate", "percent", "percentage")) or any(standard.endswith(marker) for marker in ("margin", "ratio", "rate", "percent", "percentage"))
+	return any(
+		re.search(rf"\b{marker}\b", text) is not None
+		for marker in ("margin", "ratio", "rate", "percent", "percentage")
+	) or any(
+		standard.endswith(marker)
+		for marker in ("margin", "ratio", "rate", "percent", "percentage")
+	)
 
 
 def _signature(row: pd.Series, role: str, periods: list[str]) -> tuple[object, ...]:
@@ -227,7 +275,9 @@ def _metric(row: pd.Series, metric: str, period: str, *aliases: str) -> float | 
 	return None
 
 
-def _scan_growth(row: pd.Series, period: str, previous_period: str | None) -> float | None:
+def _scan_growth(
+	row: pd.Series, period: str, previous_period: str | None
+) -> float | None:
 	"""Show growth only when both reported endpoints are strictly positive."""
 	if previous_period is None:
 		return None
@@ -283,10 +333,15 @@ def _display_rows(pnl: pd.DataFrame, periods: list[str]) -> list[dict[str, Any]]
 		if not is_dimension and label and not is_abstract:
 			parent_label = label
 		path = f"{parent_label} > {label}" if is_dimension and parent_label else label
-		if _clean(row.get("standard_concept")) == "GrossProfit" and _normalized(label) == "grossmargin":
+		if (
+			_clean(row.get("standard_concept")) == "GrossProfit"
+			and _normalized(label) == "grossmargin"
+		):
 			path = "Gross profit (reported label: Gross margin)"
 		role = _role(row)
-		if _is_noise(row) or not any(_value(row, period) is not None for period in periods):
+		if _is_noise(row) or not any(
+			_value(row, period) is not None for period in periods
+		):
 			continue
 		if role == "monetary" and _is_ratio_line(row):
 			continue
@@ -319,9 +374,14 @@ def _metadata_text(row: pd.Series) -> str:
 def _line_text(record: dict[str, Any], periods: list[str]) -> str:
 	row = record["row"]
 	raw_label = _source_label(row)
-	values = ", ".join(f"{_period_label(p)}={_dollars(_value(row, p))}" for p in periods)
+	values = ", ".join(
+		f"{_period_label(p)}={_dollars(_value(row, p))}" for p in periods
+	)
 	movements = _movement_text(row, periods)
-	intensity = "; ".join(f"{_period_label(p)}={_ratio(_metric(row, 'percent_of_revenue', p))}, bps change={_bps(_metric(row, 'percent_of_revenue_bps_change', p))}" for p in periods)
+	intensity = "; ".join(
+		f"{_period_label(p)}={_ratio(_metric(row, 'percent_of_revenue', p))}, bps change={_bps(_metric(row, 'percent_of_revenue_bps_change', p))}"
+		for p in periods
+	)
 	return (
 		f"line_ref={record['ref']} | {record['path']} | source_label={raw_label} | "
 		f"{_metadata_text(row)} | values: {values} | "
@@ -337,12 +397,21 @@ def _margin_text(
 	rows: list[dict[str, Any]],
 	periods: list[str],
 ) -> str:
-	matches = [record for record in rows if _clean(record["row"].get("standard_concept")) == standard_concept]
+	matches = [
+		record
+		for record in rows
+		if _clean(record["row"].get("standard_concept")) == standard_concept
+	]
 	record = matches[0] if len(matches) == 1 else None
 	row = pd.Series(dtype=object) if record is None else record["row"]
 	ref = "N/A" if record is None else record["ref"]
-	levels = "; ".join(f"{_period_label(p)}={_ratio(_metric(row, metric, p))}" for p in periods)
-	changes = "; ".join(f"{_period_label(p)}={_bps(_metric(row, f'{metric}_bps_change', p))}" for p in periods)
+	levels = "; ".join(
+		f"{_period_label(p)}={_ratio(_metric(row, metric, p))}" for p in periods
+	)
+	changes = "; ".join(
+		f"{_period_label(p)}={_bps(_metric(row, f'{metric}_bps_change', p))}"
+		for p in periods
+	)
 	return (
 		f"line_ref={ref} | {label} (source {standard_concept}) | "
 		f"levels: {levels} | bps change: {changes}"
@@ -369,19 +438,31 @@ def _format_context_and_refs(pnl: pd.DataFrame) -> tuple[str, set[str]]:
 	if not line_rows:
 		lines.append("- No monetary source lines supplied.")
 	lines += [
-		"", "## Margins and rates",
-		_margin_text("gross_margin", "Gross margin ratio", "GrossProfit", rows, periods),
-		_margin_text("operating_margin", "Operating margin", "OperatingIncomeLoss", rows, periods),
-		_margin_text("pretax_margin", "Pretax margin", "PretaxIncomeLoss", rows, periods),
+		"",
+		"## Margins and rates",
+		_margin_text(
+			"gross_margin", "Gross margin ratio", "GrossProfit", rows, periods
+		),
+		_margin_text(
+			"operating_margin", "Operating margin", "OperatingIncomeLoss", rows, periods
+		),
+		_margin_text(
+			"pretax_margin", "Pretax margin", "PretaxIncomeLoss", rows, periods
+		),
 		_margin_text("net_margin", "Net margin", "NetIncome", rows, periods),
-		_margin_text("effective_tax_rate", "Effective tax rate", "IncomeTaxes", rows, periods),
-		"", "## EPS and shares",
+		_margin_text(
+			"effective_tax_rate", "Effective tax rate", "IncomeTaxes", rows, periods
+		),
+		"",
+		"## EPS and shares",
 	]
 	for record in eps_rows:
 		row = record["row"]
 		kind = "shares" if record["role"] == "shares" else "EPS"
 		formatter = _shares if record["role"] == "shares" else _eps
-		values = ", ".join(f"{_period_label(p)}={formatter(_value(row, p))}" for p in periods)
+		values = ", ".join(
+			f"{_period_label(p)}={formatter(_value(row, p))}" for p in periods
+		)
 		movements = _movement_text(row, periods, record["role"])
 		lines.append(
 			f"line_ref={record['ref']} | {kind} {record['path']} | {_metadata_text(row)} | "
@@ -400,6 +481,7 @@ def format_analytical_pnl_for_scan(pnl: pd.DataFrame) -> str:
 def _filing_metadata(filing: Any) -> dict[str, str | None]:
 	if filing is None:
 		return {"company_name": None, "filing_accession": None}
+
 	def value(*names: str) -> str | None:
 		for name in names:
 			try:
@@ -409,7 +491,11 @@ def _filing_metadata(filing: Any) -> dict[str, str | None]:
 			if not callable(candidate) and (text := _clean(candidate)):
 				return text
 		return None
-	return {"company_name": value("company_name", "company", "name"), "filing_accession": value("accession_no", "accession_number")}
+
+	return {
+		"company_name": value("company_name", "company", "name"),
+		"filing_accession": value("accession_no", "accession_number"),
+	}
 
 
 def validate_analytical_scan_result(
@@ -417,25 +503,39 @@ def validate_analytical_scan_result(
 	supplied_line_refs: Iterable[str],
 ) -> AnalyticalScanResult:
 	try:
-		parsed = result if isinstance(result, AnalyticalScanResult) else AnalyticalScanResult.model_validate(result)
+		parsed = (
+			result
+			if isinstance(result, AnalyticalScanResult)
+			else AnalyticalScanResult.model_validate(result)
+		)
 	except Exception as exc:
 		raise AnalyticalScanError(f"invalid analytical scan result: {exc}") from exc
 	findings = parsed.findings
 	if len(findings) > 8:
 		raise AnalyticalScanError("analytical scan returned more than 8 findings")
 	if [finding.rank for finding in findings] != list(range(1, len(findings) + 1)):
-		raise AnalyticalScanError("analytical scan ranks must be unique and ordered from 1")
+		raise AnalyticalScanError(
+			"analytical scan ranks must be unique and ordered from 1"
+		)
 	allowed = set(supplied_line_refs)
 	for finding in findings:
 		refs = finding.affected_line_refs
 		if not refs:
-			raise AnalyticalScanError(f"finding {finding.rank} has no affected line reference")
+			raise AnalyticalScanError(
+				f"finding {finding.rank} has no affected line reference"
+			)
 		if len(refs) != len(set(refs)):
-			raise AnalyticalScanError(f"finding {finding.rank} repeats an affected line reference")
+			raise AnalyticalScanError(
+				f"finding {finding.rank} repeats an affected line reference"
+			)
 		if unknown := [ref for ref in refs if ref not in allowed]:
-			raise AnalyticalScanError(f"finding {finding.rank} references unknown line(s): {', '.join(unknown)}")
+			raise AnalyticalScanError(
+				f"finding {finding.rank} references unknown line(s): {', '.join(unknown)}"
+			)
 		if len(finding.investigation_questions) > 3:
-			raise AnalyticalScanError(f"finding {finding.rank} has more than 3 questions")
+			raise AnalyticalScanError(
+				f"finding {finding.rank} has more than 3 questions"
+			)
 	return parsed
 
 
@@ -465,7 +565,9 @@ def run_analytical_scan(
 
 			client = OpenAI()
 		except Exception as exc:
-			raise AnalyticalScanError(f"could not initialize OpenAI client: {exc}") from exc
+			raise AnalyticalScanError(
+				f"could not initialize OpenAI client: {exc}"
+			) from exc
 	try:
 		response = client.responses.parse(
 			model=model,
@@ -477,12 +579,18 @@ def run_analytical_scan(
 			text_format=AnalyticalScanResult,
 		)
 		parsed = getattr(response, "output_parsed", None)
-		result = parsed if isinstance(parsed, AnalyticalScanResult) else AnalyticalScanResult.model_validate(parsed)
+		result = (
+			parsed
+			if isinstance(parsed, AnalyticalScanResult)
+			else AnalyticalScanResult.model_validate(parsed)
+		)
 		result = validate_analytical_scan_result(result, supplied_refs)
 	except AnalyticalScanError:
 		raise
 	except Exception as exc:
-		raise AnalyticalScanError(f"structured Analytical Scan call failed: {exc}") from exc
+		raise AnalyticalScanError(
+			f"structured Analytical Scan call failed: {exc}"
+		) from exc
 	effective_run_id = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 	metadata: dict[str, Any] = {
 		"ticker": ticker.strip().upper(),
@@ -514,16 +622,29 @@ def save_analytical_scan(
 		raise AnalyticalScanError("scan metadata must contain run_id")
 	refs = set(_LINE_REF_PATTERN.findall(context))
 	validated = validate_analytical_scan_result(result, refs)
-	output_directory = Path(output_root) / ticker.strip().upper() / "03_output" / "analysis"
+	output_directory = (
+		Path(output_root) / ticker.strip().upper() / "03_output" / "analysis"
+	)
 	output_directory.mkdir(parents=True, exist_ok=True)
 	output_path = output_directory / f"analytical_scan_{metadata['run_id']}.json"
-	payload = {"metadata": metadata, "context": context, "result": validated.model_dump(mode="json")}
-	output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n", encoding="utf-8")
+	payload = {
+		"metadata": metadata,
+		"context": context,
+		"result": validated.model_dump(mode="json"),
+	}
+	output_path.write_text(
+		json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+		encoding="utf-8",
+	)
 	return output_path
 
 
 def render_analytical_scan_summary(result: AnalyticalScanResult) -> str:
-	validated = result if isinstance(result, AnalyticalScanResult) else AnalyticalScanResult.model_validate(result)
+	validated = (
+		result
+		if isinstance(result, AnalyticalScanResult)
+		else AnalyticalScanResult.model_validate(result)
+	)
 	lines = [f"Analytical Scan: {len(validated.findings)} finding(s)"]
 	for finding in validated.findings:
 		lines.extend(
