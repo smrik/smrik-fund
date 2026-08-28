@@ -40,6 +40,11 @@ from smrik_fund.ingestion.filing_investigation import (
 	validate_financial_investigation,
 	validate_query_expansion,
 )
+from smrik_fund.ingestion.segments import (
+	load_segment_analytics,
+	save_segment_analytics,
+	save_segment_reconciliation,
+)
 from smrik_fund.ingestion.statements import prepare_pnl, save_analytical_pnl
 from smrik_fund.main import app
 
@@ -75,6 +80,55 @@ def finding() -> AnalyticalScanFinding:
 		why_it_matters="The filing may explain the change.",
 		investigation_questions=["What disclosed driver explains the movement?"],
 	)
+
+
+def make_segments() -> tuple[pd.DataFrame, pd.DataFrame]:
+	rows: list[dict[str, object]] = []
+	revenue_values = [110.0, 100.0, 90.0]
+	for metric, values in {
+		"Revenue": revenue_values,
+		"OperatingIncomeLoss": [55.0, 50.0, 45.0],
+	}.items():
+		for index, (period, value) in enumerate(zip(PERIODS, values, strict=True)):
+			previous = values[index + 1] if index + 1 < len(values) else None
+			rows.append(
+				{
+					"segment_axis": "StatementBusinessSegmentsAxis",
+					"segment_member": "example:Member",
+					"segment_label": "Example",
+					"metric": metric,
+					"period": period,
+					"reported_value": value,
+					"numeric_value": value,
+					"fact_status": "PASS",
+					"segment_ref": "",
+					"absolute_yoy_change": None if previous is None else value - previous,
+					"yoy_growth": None if previous is None else value / previous - 1,
+					"revenue_share": None
+					if metric != "Revenue"
+					else value / revenue_values[index],
+					"revenue_share_change_bps": None,
+					"revenue_growth_contribution": None,
+					"operating_margin": None
+					if metric != "OperatingIncomeLoss"
+					else value / revenue_values[index],
+					"operating_margin_bps_change": None,
+					"operating_income_growth_contribution": None,
+				}
+			)
+	checks = pd.DataFrame(
+		{
+			"metric": ["Revenue", "OperatingIncomeLoss"],
+			"period": [PERIODS[0], PERIODS[0]],
+			"reported_segment_total": [110.0, 55.0],
+			"reported_consolidated_total": [110.0, 55.0],
+			"residual": [0.0, 0.0],
+			"status": ["PASS", "PASS"],
+		}
+	)
+	segments = pd.DataFrame(rows)
+	segments.attrs["segment_reconciliation"] = checks
+	return segments, checks
 
 
 class FakeSection:
@@ -1316,8 +1370,56 @@ class FilingInvestigationTests(TestCase):
 		):
 			self.assertFalse(hasattr(investigation, name), name)
 
+	def test_segment_ref_filing_investigation_fails_closed_before_pnl_indexing(
+		self,
+	) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "S-ref filing investigation is unsupported"
+		):
+			investigate_finding(
+				"MSFT", make_pnl(), FakeFiling(), segment_finding, client=Mock()
+			)
+
 
 class SavedScanTests(TestCase):
+	def test_enriched_saved_scan_reconstructs_persisted_segment_context(self) -> None:
+		pnl = make_pnl()
+		segments, checks = make_segments()
+		context = format_analytical_pnl_for_scan(pnl, segments)
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			save_analytical_pnl("MSFT", pnl, root)
+			save_segment_analytics("MSFT", segments, root)
+			save_segment_reconciliation("MSFT", checks, root)
+			loaded_segments = load_segment_analytics("MSFT", root)
+			path = save_analytical_scan(
+				"MSFT",
+				AnalyticalScanResult(findings=[finding()]),
+				{"ticker": "MSFT", "filing_accession": "A1", "run_id": "s1"},
+				context,
+				root,
+			)
+			loaded, selected, loaded_context, _metadata = load_saved_scan(
+				path, "MSFT", pnl, loaded_segments
+			)
+			self.assertEqual(selected.rank, 1)
+			self.assertEqual(loaded_context, context)
+			self.assertEqual(len(loaded.findings), 1)
+			payload, _artifact = investigate_finding(
+				"MSFT",
+				pnl,
+				FakeFiling(),
+				selected,
+				scan_metadata={"filing_accession": "A1"},
+				scan_context=loaded_context,
+				segments=loaded_segments,
+				output_root=root,
+				client=FakeResponsesClient(),
+				run_id="investigation1",
+			)
+			self.assertEqual(payload["status"], "completed")
+
 	def test_saved_scan_context_and_accession_are_checked(self) -> None:
 		pnl = make_pnl()
 		context = format_analytical_pnl_for_scan(pnl)

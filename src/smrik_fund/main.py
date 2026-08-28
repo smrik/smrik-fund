@@ -77,6 +77,13 @@ from .ingestion.risk_gate import (
 	RiskGateConditions,
 	evaluate_risk_gate,
 )
+from .ingestion.segments import (
+	SegmentAnalyticsError,
+	build_segment_enrichment,
+	load_segment_analytics,
+	save_segment_analytics,
+	save_segment_reconciliation,
+)
 from .ingestion.statements import (
 	ANNUAL_PERIOD_PATTERN,
 	build_analytical_pnl,
@@ -2293,11 +2300,30 @@ def analyze(
 	_save_and_report_reconciliation(ticker, pnl, output_root)
 	if scan:
 		try:
-			context = format_analytical_pnl_for_scan(pnl)
+			segments = None
+			filing = pnl.attrs.get("edgar_filing")
+			if filing is not None:
+				try:
+					segments, segment_checks = build_segment_enrichment(
+						filing, pnl, years=years
+					)
+					save_segment_analytics(ticker, segments, output_root)
+					save_segment_reconciliation(ticker, segment_checks, output_root)
+				except SegmentAnalyticsError as exc:
+					typer.echo(
+						f"Segment analytics unavailable; using consolidated context: {exc}",
+						err=True,
+					)
+					segments = None
+			context = (
+				format_analytical_pnl_for_scan(pnl, segments)
+				if segments is not None
+				else format_analytical_pnl_for_scan(pnl)
+			)
 			result, metadata = run_analytical_scan(
 				ticker,
 				pnl,
-				filing=pnl.attrs.get("edgar_filing"),
+				filing=filing,
 				model=model,
 				reasoning_effort=reasoning_effort,
 				context=context,
@@ -2357,10 +2383,20 @@ def investigate(
 	try:
 		pnl = load_analytical_pnl(normalized_ticker, output_root)
 		selected_scan = scan_file or latest_scan_path(normalized_ticker, output_root)
+		segments = None
+		segment_path = (
+			Path(output_root)
+			/ normalized_ticker
+			/ "03_output"
+			/ "segment_analytics.csv"
+		)
+		if segment_path.is_file():
+			segments = load_segment_analytics(normalized_ticker, output_root)
 		scan_result, _first_finding, scan_context, scan_metadata = load_saved_scan(
 			selected_scan,
 			normalized_ticker,
 			pnl,
+			segments,
 		)
 		finding = select_saved_finding(scan_result, finding_rank)
 		filing = get_latest_filing(normalized_ticker)
@@ -2391,12 +2427,14 @@ def investigate(
 			# EdgarTools standard-statement monetary columns are reported USD;
 			# make the comparison unit explicit at this boundary.
 			observed_unit="dollars",
+			segments=segments,
 			model=model,
 			reasoning_effort=reasoning_effort,
 		)
 	except (
 		FileNotFoundError,
 		OSError,
+		SegmentAnalyticsError,
 		FilingInvestigationError,
 		ValueError,
 		TypeError,

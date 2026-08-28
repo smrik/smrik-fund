@@ -40,8 +40,9 @@ MAX_QUERIES = 3
 MAX_DRIVERS = 8
 MAX_QUERY_LENGTH = 240
 
-_LINE_REF_PATTERN = re.compile(r"^line_ref=(L\d+)\b", re.MULTILINE)
+_LINE_REF_PATTERN = re.compile(r"^line_ref=([LS]\d+)\b", re.MULTILINE)
 _BARE_LINE_REF = re.compile(r"^L\d+$")
+_BARE_SEGMENT_REF = re.compile(r"^S\d+$")
 _EXPANSION_PROMPT = (
 	Path(__file__).resolve().parents[3] / "prompts" / "filing_query_expansion.md"
 ).read_text(encoding="utf-8")
@@ -57,6 +58,20 @@ DriverEffect = Literal["increased_line", "decreased_line", "unknown"]
 
 class FilingInvestigationError(RuntimeError):
 	"""A finding investigation cannot continue safely."""
+
+
+def _reject_segment_refs(finding: AnalyticalScanFinding) -> None:
+	"""Keep analytical-only segment refs out of the consolidated P&L boundary."""
+	segment_refs = [
+		ref for ref in finding.affected_line_refs if _BARE_SEGMENT_REF.fullmatch(ref)
+	]
+	if segment_refs:
+		raise FilingInvestigationError(
+			"S-ref filing investigation is unsupported: segment refs are "
+			"analytical-only and cannot be indexed as P&L rows ("
+			+ ", ".join(segment_refs)
+			+ ")"
+		)
 
 
 class FilingGroundedQuery(BaseModel):
@@ -391,6 +406,10 @@ def _source_context_rows(
 	return rows
 
 
+def _context_has_segment_refs(context: str) -> bool:
+	return any(ref.startswith("S") for ref in _LINE_REF_PATTERN.findall(context))
+
+
 def _affected_source_context(
 	context: dict[str, Any], finding: AnalyticalScanFinding
 ) -> list[dict[str, str]]:
@@ -475,6 +494,7 @@ def build_initial_search_plan(
 	"""Build bounded literal seeds from the saved finding and source labels."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
+	_reject_segment_refs(finding)
 	rows = _affected_source_context(affected_source_context, finding)
 
 	# Keep the supplied affected-reference order stable; no filing knowledge is
@@ -537,6 +557,7 @@ def build_finding_plan_context(
 	"""Build source-label context; filing text is intentionally excluded."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
+	_reject_segment_refs(finding)
 	rows: list[dict[str, str]] = []
 	for ref in finding.affected_line_refs:
 		match = re.fullmatch(r"L(\d+)", ref)
@@ -819,6 +840,9 @@ def build_observed_movement(
 	"""Copy finding rows and calculate only source-value year-over-year differences."""
 	if not isinstance(pnl, pd.DataFrame):
 		raise TypeError("pnl must be a pandas DataFrame")
+	if not isinstance(finding, AnalyticalScanFinding):
+		raise TypeError("finding must be an AnalyticalScanFinding")
+	_reject_segment_refs(finding)
 	periods = [
 		column
 		for column in pnl.columns
@@ -1970,6 +1994,7 @@ def run_financial_investigation(
 		pnl, pd.DataFrame
 	):
 		raise TypeError("finding and pnl have invalid types")
+	_reject_segment_refs(finding)
 	if not _text(expected_filing_accession):
 		raise FilingInvestigationError(
 			"expected filing accession is required at the investigation boundary"
@@ -2199,6 +2224,7 @@ def investigate_finding(
 	scan_path: str | Path | None = None,
 	scan_metadata: dict[str, Any] | None = None,
 	scan_context: str | None = None,
+	segments: pd.DataFrame | None = None,
 	filing_context: dict[str, Any] | None = None,
 	output_root: str | Path = "data",
 	observed_unit: AmountUnit = "unknown",
@@ -2210,11 +2236,20 @@ def investigate_finding(
 	"""Run one plan -> retrieve -> investigate flow and persist its status."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
+	_reject_segment_refs(finding)
 	ticker = ticker.strip().upper()
 	run_id = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 	if scan_context is not None:
+		context_segments = segments if _context_has_segment_refs(scan_context) else None
+		if _context_has_segment_refs(scan_context) and context_segments is None:
+			raise FilingInvestigationError(
+				"saved scan context contains segment refs but persisted segment "
+				"analytics were not supplied"
+			)
 		try:
-			context_matches = format_analytical_pnl_for_scan(pnl) == scan_context
+			context_matches = (
+				format_analytical_pnl_for_scan(pnl, context_segments) == scan_context
+			)
 		except (TypeError, ValueError) as exc:
 			raise FilingInvestigationError(
 				f"saved scan context cannot be checked: {exc}"
@@ -2602,8 +2637,9 @@ def load_saved_scan(
 	path: str | Path,
 	ticker: str,
 	pnl: pd.DataFrame | None = None,
+	segments: pd.DataFrame | None = None,
 ) -> tuple[AnalyticalScanResult, AnalyticalScanFinding, str, dict[str, Any]]:
-	"""Validate a persisted scan, including exact context when P&L is supplied."""
+	"""Validate a persisted scan, including exact enriched context when supplied."""
 	try:
 		payload = json.loads(Path(path).read_text(encoding="utf-8"))
 	except (OSError, json.JSONDecodeError) as exc:
@@ -2620,6 +2656,12 @@ def load_saved_scan(
 	refs = set(_LINE_REF_PATTERN.findall(context))
 	if not refs:
 		raise FilingInvestigationError("saved scan context contains no line references")
+	context_has_segments = _context_has_segment_refs(context)
+	if context_has_segments and segments is None:
+		raise FilingInvestigationError(
+			"saved scan context contains segment refs but persisted segment analytics "
+			"were not supplied"
+		)
 	try:
 		result = validate_analytical_scan_result(payload.get("result", {}), refs)
 	except AnalyticalScanError as exc:
@@ -2632,7 +2674,12 @@ def load_saved_scan(
 		)
 	if pnl is not None:
 		try:
-			context_matches = format_analytical_pnl_for_scan(pnl) == context
+			context_matches = (
+				format_analytical_pnl_for_scan(
+					pnl, segments if context_has_segments else None
+				)
+				== context
+			)
 		except (TypeError, ValueError) as exc:
 			raise FilingInvestigationError(
 				f"saved scan context cannot be checked: {exc}"

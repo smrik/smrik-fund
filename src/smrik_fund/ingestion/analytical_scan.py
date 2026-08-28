@@ -15,16 +15,17 @@ import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
 
+from .segments import assign_segment_refs
 from .statements import ANNUAL_PERIOD_PATTERN
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-PROMPT_VERSION = "analytical-scan-v2"
-SCHEMA_VERSION = "analytical-scan-result-v2"
-_LINE_REF_PATTERN = re.compile(r"^line_ref=(L\d+)\b", re.MULTILINE)
+PROMPT_VERSION = "analytical-scan-v3"
+SCHEMA_VERSION = "analytical-scan-result-v3"
+_LINE_REF_PATTERN = re.compile(r"^line_ref=([LS]\d+)\b", re.MULTILINE)
 _PROMPT_PATH = Path(__file__).resolve().parents[3] / "prompts" / "analytical_scan.md"
 ANALYTICAL_SCAN_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
-LineRef = Annotated[str, Field(pattern=r"^L\d+$")]
+LineRef = Annotated[str, Field(pattern=r"^[LS]\d+$")]
 
 
 class AnalyticalScanError(RuntimeError):
@@ -39,7 +40,7 @@ class AnalyticalScanFinding(BaseModel):
 	importance: Literal["high", "medium", "low"]
 	affected_line_refs: list[LineRef] = Field(
 		min_length=1,
-		description="Bare exact source-row references copied from line_ref=L## markers.",
+		description="Bare exact source-row references copied from line_ref=L## or S## markers.",
 	)
 	observation: str = Field(min_length=1, max_length=1200)
 	why_it_matters: str = Field(min_length=1, max_length=1200)
@@ -418,7 +419,110 @@ def _margin_text(
 	)
 
 
-def _format_context_and_refs(pnl: pd.DataFrame) -> tuple[str, set[str]]:
+def _segment_value(row: pd.Series, period: str) -> float | None:
+	for column in ("numeric_value", "reported_value", "value"):
+		if column in row:
+			value = _number(row.get(column))
+			if value is not None:
+				return value
+	return None
+
+
+def _segment_metric(row: pd.Series, name: str, period: str) -> float | None:
+	for column in (name, f"{name}_{period}"):
+		if column in row:
+			value = _number(row.get(column))
+			if value is not None:
+				return value
+	return None
+
+
+def _format_segment_context(
+	segments: pd.DataFrame,
+	periods: list[str],
+) -> tuple[list[str], set[str]]:
+	"""Render compact segment lines; never include the raw facts table."""
+	if not isinstance(segments, pd.DataFrame) or segments.empty:
+		return [], set()
+	try:
+		segments = assign_segment_refs(segments)
+	except (KeyError, TypeError):
+		return [], set()
+	required = {"segment_member", "metric", "segment_ref"}
+	if not required.issubset(segments.columns):
+		return [], set()
+	selectable = segments[
+		segments["segment_ref"].fillna("").astype(str).str.strip().ne("")
+		& segments["fact_status"].fillna("PASS").eq("PASS")
+	]
+	lines: list[str] = []
+	refs: set[str] = set()
+	groups = list(
+		selectable.groupby(
+			["segment_member", "metric", "segment_ref"], dropna=False, sort=False
+		)
+	)
+	groups.sort(key=lambda item: _clean(item[0][2]))
+	for (member, metric, ref), group in groups:
+		ref = _clean(ref)
+		if not ref:
+			continue
+		refs.add(ref)
+		label = _clean(group.iloc[0].get("segment_label")) or _clean(member)
+		axis = _clean(group.iloc[0].get("segment_axis"))
+		prefix = f"line_ref={ref} | {label} | metric={metric}"
+		if axis:
+			prefix += f" | segment_axis={axis}; segment_member={member}"
+		values: list[str] = []
+		for period in periods:
+			matches = group[
+				group.get("period", pd.Series(index=group.index)).eq(period)
+			]
+			row = matches.iloc[0] if len(matches) == 1 else pd.Series(dtype=object)
+			values.append(
+				f"{_period_label(period)}={_dollars(_segment_value(row, period))}"
+			)
+		parts = [prefix, "values: " + ", ".join(values)]
+		for period in periods:
+			matches = group[
+				group.get("period", pd.Series(index=group.index)).eq(period)
+			]
+			row = matches.iloc[0] if len(matches) == 1 else pd.Series(dtype=object)
+			growth = _segment_metric(row, "yoy_growth", period)
+			absolute = _segment_metric(row, "absolute_yoy_change", period)
+			if metric == "Revenue":
+				parts.append(
+					f"{_period_label(period)} abs={_dollars(absolute, signed=True)}, "
+					f"growth={_ratio(growth)}, share={_ratio(_segment_metric(row, 'revenue_share', period))}, "
+					f"share change={_bps(_segment_metric(row, 'revenue_share_change_bps', period))}, "
+					f"revenue growth contribution={_ratio(_segment_metric(row, 'revenue_growth_contribution', period))}"
+				)
+			else:
+				parts.append(
+					f"{_period_label(period)} abs={_dollars(absolute, signed=True)}, "
+					f"growth={_ratio(growth)}, margin={_ratio(_segment_metric(row, 'operating_margin', period))}, "
+					f"margin change={_bps(_segment_metric(row, 'operating_margin_bps_change', period))}, "
+					f"operating-income growth contribution={_ratio(_segment_metric(row, 'operating_income_growth_contribution', period))}"
+				)
+		lines.append(" | ".join(parts))
+	checks = segments.attrs.get("segment_reconciliation")
+	if isinstance(checks, pd.DataFrame) and not checks.empty:
+		lines.append("Reconciliation (not selectable):")
+		for _, check in checks.iterrows():
+			lines.append(
+				f"- {check.get('metric')} {_period_label(check.get('period'))}: "
+				f"segment total={_dollars(_number(check.get('reported_segment_total')))}, "
+				f"consolidated={_dollars(_number(check.get('reported_consolidated_total')))}, "
+				f"residual={_dollars(_number(check.get('residual')), signed=True)}, "
+				f"status={_clean(check.get('status')) or 'UNRESOLVED'}"
+			)
+	return lines, refs
+
+
+def _format_context_and_refs(
+	pnl: pd.DataFrame,
+	segments: pd.DataFrame | None = None,
+) -> tuple[str, set[str]]:
 	periods = _annual_periods(pnl)
 	rows = _display_rows(pnl, periods)
 	period_header = ", ".join(f"{_period_label(p)}={p}" for p in periods)
@@ -470,12 +574,31 @@ def _format_context_and_refs(pnl: pd.DataFrame) -> tuple[str, set[str]]:
 		)
 	if not eps_rows:
 		lines.append("- No EPS or share rows supplied.")
+	if segments is not None:
+		segment_lines, segment_refs = _format_segment_context(segments, periods)
+		if segment_lines:
+			lines.extend(
+				[
+					"",
+					"## Reportable segment results",
+					"Segment rows are supplied facts; compare growth, mix, contribution, and margins with consolidated performance only when relevant.",
+					"Segment selectable rows use bare S## refs; do not invent refs.",
+					*segment_lines,
+				]
+			)
+		else:
+			segment_refs = set()
+	else:
+		segment_refs = set()
 	context = "\n".join(lines) + "\n"
-	return context, {record["ref"] for record in rows}
+	return context, {record["ref"] for record in rows} | segment_refs
 
 
-def format_analytical_pnl_for_scan(pnl: pd.DataFrame) -> str:
-	return _format_context_and_refs(pnl)[0]
+def format_analytical_pnl_for_scan(
+	pnl: pd.DataFrame,
+	segments: pd.DataFrame | None = None,
+) -> str:
+	return _format_context_and_refs(pnl, segments)[0]
 
 
 def _filing_metadata(filing: Any) -> dict[str, str | None]:
@@ -549,9 +672,10 @@ def run_analytical_scan(
 	reasoning_effort: str = DEFAULT_REASONING_EFFORT,
 	run_id: str | None = None,
 	context: str | None = None,
+	segments: pd.DataFrame | None = None,
 ) -> tuple[AnalyticalScanResult, dict[str, Any]]:
 	if context is None:
-		context, supplied_refs = _format_context_and_refs(pnl)
+		context, supplied_refs = _format_context_and_refs(pnl, segments)
 	elif isinstance(context, str):
 		supplied_refs = set(_LINE_REF_PATTERN.findall(context))
 	else:
@@ -605,6 +729,8 @@ def run_analytical_scan(
 		"timestamp_utc": datetime.now(UTC).isoformat(),
 		"finding_count": len(result.findings),
 		"supplied_line_count": len(supplied_refs),
+		"supplied_segment_count": sum(ref.startswith("S") for ref in supplied_refs),
+		"segment_enriched": any(ref.startswith("S") for ref in supplied_refs),
 	}
 	return result, metadata
 
