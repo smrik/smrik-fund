@@ -26,6 +26,7 @@ from smrik_fund.ingestion.filing_investigation import (
 	FindingSearchPlan,
 	_driver_claim_supported,
 	_movement_reconciliation,
+	_select_initial_queries,
 	build_finding_plan_context,
 	build_initial_search_plan,
 	extract_period_paired_disclosures,
@@ -216,13 +217,103 @@ class FilingInvestigationTests(TestCase):
 			"filing_text": "OpenAI drove the result.",
 		}
 		plan, derivations = build_initial_search_plan(finding(), context)
-		self.assertEqual(plan.queries, ["Other income (expense), net included"])
+		self.assertEqual(
+			plan.queries,
+			[
+				"Other income (expense), net increased",
+				"Other income (expense), net decreased",
+				"Other income (expense), net driven by",
+			],
+		)
 		self.assertNotIn("openai", " ".join(plan.queries).casefold())
+		self.assertEqual(len(derivations), 6)
 		self.assertEqual(derivations[0]["line_refs"], ["L01"])
+		self.assertEqual(derivations[0]["generic_cue"], "increased")
 		self.assertEqual(derivations[0]["pass_name"], "initial")
 		run_plan, metadata = run_search_plan("MSFT", finding(), context)
 		self.assertEqual(run_plan.queries, plan.queries)
 		self.assertEqual(metadata["planner_call_count"], 0)
+
+	def test_initial_candidates_use_generic_concept_qualifiers(self) -> None:
+		context = {
+			"lines": [
+				{
+					"line_ref": "L01",
+					"source_label": "Sales and marketing",
+					"concept": "us-gaap_SellingAndMarketingExpense",
+				}
+			]
+		}
+		plan, derivations = build_initial_search_plan(finding(), context)
+
+		self.assertEqual(plan.queries[0], "Sales and marketing expenses increased")
+		self.assertEqual(
+			[item["query"] for item in derivations[:5]],
+			[
+				"Sales and marketing expenses increased",
+				"Sales and marketing expenses decreased",
+				"Sales and marketing expenses driven by",
+				"Sales and marketing expenses due to",
+				"Sales and marketing expenses offset",
+			],
+		)
+		self.assertTrue(all("OpenAI" not in item["query"] for item in derivations))
+
+	def test_initial_selection_prefers_movement_and_keeps_static_fallback(self) -> None:
+		class MixedFiling:
+			def text(self) -> str:
+				return (
+					"Sales and marketing expenses include payroll.\n"
+					"Sales and marketing expenses increased driven by commercial sales.\n"
+				)
+
+		class StaticFiling:
+			def text(self) -> str:
+				return "Sales and marketing expenses include payroll.\n"
+
+		context = {
+			"lines": [
+				{
+					"line_ref": "L01",
+					"source_label": "Sales and marketing",
+					"concept": "us-gaap_SellingAndMarketingExpense",
+				}
+			]
+		}
+		plan, derivations = build_initial_search_plan(finding(), context)
+		selected, metadata = _select_initial_queries(MixedFiling(), plan, derivations)
+		self.assertEqual(selected.queries, ["Sales and marketing expenses increased"])
+		self.assertEqual(metadata["query_derivations"][0]["generic_cue"], "increased")
+		self.assertTrue(
+			any(
+				item["reason"] == "static fallback superseded by movement query"
+				for item in metadata["rejected_candidates"]
+			)
+		)
+
+		static_selected, static_metadata = _select_initial_queries(
+			StaticFiling(), plan, derivations
+		)
+		self.assertEqual(static_selected.queries, ["Sales and marketing"])
+		self.assertEqual(static_metadata["query_derivations"][0]["generic_cue"], None)
+
+	def test_initial_selection_deduplicates_line_refs_before_query_cap(self) -> None:
+		finding_value = finding().model_copy(update={"affected_line_refs": ["L01", "L02", "L03"]})
+		context = {
+			"lines": [
+				{"line_ref": "L01", "source_label": "Cost of revenue"},
+				{"line_ref": "L02", "source_label": "Gross margin"},
+				{"line_ref": "L03", "source_label": "Service and Other"},
+			]
+		}
+		plan, derivations = build_initial_search_plan(finding_value, context)
+		class Filing:
+			def text(self) -> str:
+				return "Cost of revenue increased. Gross margin increased. Cost of revenue decreased. Service and Other."
+		selected, metadata = _select_initial_queries(Filing(), plan, derivations)
+		self.assertEqual(selected.queries, ["Cost of revenue increased", "Gross margin increased", "Service and Other"])
+		self.assertEqual(metadata["query_derivations"][-1]["line_refs"], ["L03"])
+
 
 	def test_build_finding_plan_context_excludes_filing_text(self) -> None:
 		context = build_finding_plan_context(make_pnl(), FakeFiling(), finding())
@@ -375,8 +466,8 @@ class FilingInvestigationTests(TestCase):
 		self.assertEqual(
 			filing.searches,
 			[
-				("Revenue", False),
-				("Revenue", False),
+				("Revenue increased", False),
+				("Revenue increased", False),
 				("driven by demand", False),
 			],
 		)
@@ -462,7 +553,7 @@ class FilingInvestigationTests(TestCase):
 				run_id="run1",
 			)
 			self.assertEqual(payload["status"], "completed")
-			self.assertEqual(filing.searches, [("Revenue", False)])
+			self.assertEqual(filing.searches, [("Revenue increased", False)])
 			evidence_path = Path(payload["retrieval"]["evidence_file"])
 			self.assertIn(
 				"Revenue increased $10 million driven by demand.",
@@ -862,6 +953,26 @@ class FilingInvestigationTests(TestCase):
 			validate_financial_investigation(
 				result,
 				self.evidence_packet("The filing disclosed an investment gain."),
+			)
+
+	def test_mixed_supported_and_invented_causal_tokens_fail_closed(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The investment gain drove demand and imaginary pressure.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported causal claim"
+		):
+			validate_financial_investigation(
+				result,
+				self.evidence_packet(
+					"The filing disclosed an investment gain caused by demand."
+				),
 			)
 
 	def test_unsupported_named_entity_fails_closed(self) -> None:

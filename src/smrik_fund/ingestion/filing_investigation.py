@@ -329,6 +329,23 @@ _INITIAL_UNSAFE_QUERY_PATTERN = re.compile(r"[\\\[\]?*+{}|]")
 _UNSAFE_SOURCE_LABEL_PATTERN = re.compile(
 	r"(?:\d|[$€£]|https?://|www\.)", re.IGNORECASE
 )
+_INITIAL_MOVEMENT_CUES: tuple[tuple[str, str], ...] = (
+	("increased", "increased"),
+	("decreased", "decreased"),
+	("driven by", "driven by"),
+	("due to", "due to"),
+	("offset", "offset"),
+)
+_INITIAL_GENERIC_QUALIFIERS: tuple[tuple[str, str], ...] = (
+	("revenue", "revenue"),
+	("cost", "costs"),
+	("expense", "expenses"),
+	("income", "income"),
+)
+_INITIAL_LABEL_NOUN_PATTERN = re.compile(
+	r"\b(?:revenue|costs?|expenses?|income|gains?|loss(?:es)?)\b",
+	re.IGNORECASE,
+)
 
 
 def _source_context_rows(
@@ -415,11 +432,40 @@ def _safe_source_label(value: object) -> str | None:
 
 
 def _initial_query_for_label(label: str) -> tuple[str, str | None]:
-	"""Choose one fixed generic cue only when a disclosure lead-in fits."""
+	"""Choose the existing static fallback for one source label."""
 	lower = label.casefold()
 	if any(token in lower for token in ("income", "expense", "gain", "loss")):
 		return f"{label} included", "included"
 	return label, None
+
+
+def _initial_generic_qualifier(row: dict[str, str], label: str) -> str | None:
+	"""Return one unambiguous generic noun from supplied concept metadata."""
+	if _INITIAL_LABEL_NOUN_PATTERN.search(label):
+		return None
+	metadata = " ".join(
+		_text(row.get(field)) for field in ("concept", "standard_concept")
+	).casefold()
+	matches = [
+		qualifier
+		for token, qualifier in _INITIAL_GENERIC_QUALIFIERS
+		if token in metadata
+	]
+	return matches[0] if len(set(matches)) == 1 else None
+
+
+def _initial_query_record(
+	query: str,
+	line_ref: str,
+	label: str,
+	cue: str | None,
+) -> dict[str, Any]:
+	return InitialQueryDerivation(
+		query=query,
+		line_refs=[line_ref],
+		source_label=label,
+		generic_cue=cue,
+	).model_dump(mode="json")
 
 
 def build_initial_search_plan(
@@ -432,7 +478,8 @@ def build_initial_search_plan(
 	rows = _affected_source_context(affected_source_context, finding)
 
 	# Keep the supplied affected-reference order stable; no filing knowledge is
-	# used to rank or replace a source label.
+	# used to rank or replace a source label. All candidate phrases are bounded
+	# by the five fixed generic movement cues plus one static fallback per row.
 	ordered_rows = rows
 	derivations: list[dict[str, Any]] = []
 	seen: set[str] = set()
@@ -440,6 +487,26 @@ def build_initial_search_plan(
 		label = _safe_source_label(row.get("source_label"))
 		if label is None:
 			continue
+		subject = label
+		qualifier = _initial_generic_qualifier(row, label)
+		if qualifier:
+			subject = f"{label} {qualifier}"
+		for cue, phrase in _INITIAL_MOVEMENT_CUES:
+			query = f"{subject} {phrase}"
+			if len(query) > MAX_QUERY_LENGTH:
+				continue
+			key = query.casefold()
+			if key in seen:
+				for derivation in derivations:
+					if derivation["query"].casefold() == key:
+						if row["line_ref"] not in derivation["line_refs"]:
+							derivation["line_refs"].append(row["line_ref"])
+						break
+				continue
+			seen.add(key)
+			derivations.append(
+				_initial_query_record(query, row["line_ref"], label, cue)
+			)
 		query, cue = _initial_query_for_label(label)
 		if len(query) > MAX_QUERY_LENGTH:
 			continue
@@ -452,21 +519,12 @@ def build_initial_search_plan(
 					break
 			continue
 		seen.add(key)
-		derivations.append(
-			InitialQueryDerivation(
-				query=query,
-				line_refs=[row["line_ref"]],
-				source_label=label,
-				generic_cue=cue,
-			).model_dump(mode="json")
-		)
-		if len(derivations) >= MAX_QUERIES:
-			break
+		derivations.append(_initial_query_record(query, row["line_ref"], label, cue))
 	plan = FindingSearchPlan(
 		finding_rank=finding.rank,
 		affected_line_refs=list(finding.affected_line_refs),
 		investigation_questions=list(finding.investigation_questions),
-		queries=[item["query"] for item in derivations],
+		queries=[item["query"] for item in derivations[:MAX_QUERIES]],
 	)
 	return plan, derivations
 
@@ -519,7 +577,7 @@ def run_search_plan(
 		"schema_version": SCHEMA_VERSION,
 		"run_id": run_id,
 		"pass": "initial",
-		"seed_strategy": "deterministic_finding_source_label_v1",
+		"seed_strategy": "deterministic_finding_source_label_movement_v2",
 		"planner_call_count": 0,
 		"query_count": len(plan.queries),
 		"candidate_count": len(derivations),
@@ -1679,10 +1737,9 @@ def _validate_free_text_claims(
 			for token in tokens
 			if token.casefold() not in _NARRATIVE_GENERIC_WORDS
 		]
-		if concrete_terms and not any(
-			_literal_token_supported(token, excerpt)
+		if concrete_terms and not all(
+			any(_literal_token_supported(token, excerpt) for excerpt in cited_text)
 			for token in concrete_terms
-			for excerpt in cited_text
 		):
 			raise FilingEvidenceError(f"{label} contains unsupported causal claim")
 	amount_mentions = _amount_mentions(text)
@@ -2013,17 +2070,38 @@ def _select_initial_queries(
 	plan: FindingSearchPlan,
 	derivations: list[dict[str, Any]],
 ) -> tuple[FindingSearchPlan, dict[str, Any]]:
-	"""Drop no-hit/overflow seeds using source text, preserving derivation order."""
+	"""Select literal movement seeds before static fallbacks."""
 	try:
 		text = filing.text()
 	except Exception:
 		return plan, {"source_text_filter": "unavailable"}
 	if not isinstance(text, str) or not text:
 		return plan, {"source_text_filter": "unavailable"}
+	line_order = {
+		line_ref: index for index, line_ref in enumerate(plan.affected_line_refs)
+	}
+	cue_order = {
+		cue: index for index, (cue, _) in enumerate(_INITIAL_MOVEMENT_CUES)
+	}
+	def sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int]:
+		index, derivation = item
+		cue = _text(derivation.get("generic_cue")).casefold()
+		is_movement = cue in cue_order
+		tier = 0 if is_movement else 1
+		movement_order = cue_order.get(cue, len(cue_order))
+		ref_order = min(
+			(line_order.get(ref, len(line_order)) for ref in derivation.get("line_refs", [])),
+			default=len(line_order),
+		)
+		return tier, movement_order, ref_order, index
+
 	accepted: list[str] = []
+	accepted_derivations: list[dict[str, Any]] = []
 	rejected: list[dict[str, Any]] = []
 	item_budget = MAX_EVIDENCE_ITEMS
-	for derivation in derivations:
+	accepted_line_refs: set[str] = set()
+	accepted_movement_refs: set[str] = set()
+	for _index, derivation in sorted(enumerate(derivations), key=sort_key):
 		query = derivation["query"]
 		occurrences = _literal_count(text, query)
 		if occurrences == 0:
@@ -2031,6 +2109,26 @@ def _select_initial_queries(
 				{
 					**derivation,
 					"reason": "no literal source-text hit",
+				}
+			)
+			continue
+		cue = _text(derivation.get("generic_cue")).casefold()
+		line_refs = set(derivation.get("line_refs", []))
+		if cue not in cue_order and line_refs.intersection(accepted_movement_refs):
+			rejected.append(
+				{
+					**derivation,
+					"reason": "static fallback superseded by movement query",
+					"occurrence_count": occurrences,
+				}
+			)
+			continue
+		if line_refs.intersection(accepted_line_refs):
+			rejected.append(
+				{
+					**derivation,
+					"reason": "line already covered by accepted query",
+					"occurrence_count": occurrences,
 				}
 			)
 			continue
@@ -2043,18 +2141,28 @@ def _select_initial_queries(
 				}
 			)
 			continue
+		if len(accepted) >= MAX_QUERIES:
+			rejected.append(
+				{
+					**derivation,
+					"reason": "initial query limit exceeded",
+					"occurrence_count": occurrences,
+				}
+			)
+			continue
 		accepted.append(query)
+		accepted_derivations.append(derivation)
 		item_budget -= occurrences
-	selected_derivations = [
-		derivation for derivation in derivations if derivation["query"] in accepted
-	]
+		accepted_line_refs.update(line_refs)
+		if cue in cue_order:
+			accepted_movement_refs.update(line_refs)
 	return plan.model_copy(update={"queries": accepted}), {
 		"source_text_filter": "literal_occurrence_budget",
 		"candidate_count": len(derivations),
 		"accepted_query_count": len(accepted),
 		"rejected_query_count": len(rejected),
 		"rejected_candidates": rejected,
-		"query_derivations": selected_derivations,
+		"query_derivations": accepted_derivations,
 		"candidate_derivations": derivations,
 	}
 
