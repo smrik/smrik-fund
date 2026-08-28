@@ -857,12 +857,58 @@ class FilingInvestigationTests(TestCase):
 			explanation_evidence_refs=["E1"],
 		)
 		with self.assertRaisesRegex(
-			FilingInvestigationError, "unsupported narrative token"
+			FilingInvestigationError, "unsupported causal claim"
 		):
 			validate_financial_investigation(
 				result,
 				self.evidence_packet("The filing disclosed an investment gain."),
 			)
+
+	def test_unsupported_named_entity_fails_closed(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The Azure product is disclosed.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported named entity"
+		):
+			validate_financial_investigation(
+				result,
+				self.evidence_packet("The filing disclosed an investment gain."),
+			)
+
+	def test_neutral_analytical_words_need_not_appear_in_evidence(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[
+				DisclosedDriver(
+					description="A disclosure identifies a driver component.",
+					evidence_refs=["E1"],
+				)
+			],
+			interpretation="The disclosure partially explains the movement.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="A component remains unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The driver is partially unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		validated = validate_financial_investigation(
+			result,
+			self.evidence_packet("The filing reports a gain."),
+		)
+		self.assertEqual(
+			validated.disclosed_drivers[0].description,
+			"A disclosure identifies a driver component.",
+		)
+		self.assertEqual(
+			validated.interpretation,
+			"The disclosure partially explains the movement.",
+		)
 
 	def test_unrelated_adjacent_year_downgrades_amount_period_claim(self) -> None:
 		support_span = (

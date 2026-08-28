@@ -33,7 +33,7 @@ from .statements import ANNUAL_PERIOD_PATTERN
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 EXPANSION_PROMPT_VERSION = "filing-query-expansion-v1"
-INVESTIGATION_PROMPT_VERSION = "financial-investigation-v4"
+INVESTIGATION_PROMPT_VERSION = "financial-investigation-v5"
 SCHEMA_VERSION = "filing-investigation-v3"
 MAX_FINDINGS = 8
 MAX_QUERIES = 3
@@ -1041,18 +1041,28 @@ _NEGATIVE_SEMANTIC_PATTERN = re.compile(
 	re.IGNORECASE,
 )
 _NARRATIVE_TOKEN_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)?")
-_NARRATIVE_NEUTRAL_WORDS_TEXT = """
+_NARRATIVE_GENERIC_WORDS_TEXT = """
 	a about above after again against all also am an and amount analysis analyst are as assessment associated attributes away be been being below but by complete
 	additional after available based before because between both bridge cited claim claims company composition component components conditions contains contribution contributor could
-	disclosed discloses disclosure directly driver described describes description did does do due each either evidence exact excerpt excerpts
+	cause caused causes causing causal disclosed disclose discloses disclosure directly drive driver drivers driven drove described describes description did does do due each either evidence exact excerpt excerpts
 	explanation filing fiscal for from generated had has have her here him his identify identified identifies identifying if in include included
 	includes including independent indicate indicates information into is latest current leaves line less limited mainly may might more movement net
 	another no nor not note notes of on only or other overall packet passage period points portion previous prior primarily provide provided provides quoted related scope
-	context detail details presents reference references ref refs reported remain remains remaining remainder reports results separately sign some specifically states supplied support supported supports further
+	context detail details explains explain explained explaining partially presents reference references ref refs reported remain remains remaining remainder reports resulted results separately sign some specifically states supplied support supported supports further
 	several show shows showing similar state states summary swing than that the their there these they this those through to under unquantified unsupported was were while where which within without would
 	verbatim word words would year years unresolved
 """
-_NARRATIVE_NEUTRAL_WORDS = frozenset(_NARRATIVE_NEUTRAL_WORDS_TEXT.split())
+_NARRATIVE_GENERIC_WORDS = frozenset(_NARRATIVE_GENERIC_WORDS_TEXT.split())
+_NARRATIVE_CAUSAL_PATTERN = re.compile(
+	r"\b(?:cause[ds]?|causing|drive[sn]?|driven|drove|due\s+to|"
+	r"attribut(?:e[ds]?|able\s+to)|result(?:s|ed)?\s+from|"
+	r"stem(?:s|med|ming)?\s+from|explain(?:s|ed|ing)?|"
+	r"associated\s+with|related\s+to)\b",
+	re.IGNORECASE,
+)
+_NARRATIVE_NAMED_ENTITY_TOKEN_PATTERN = re.compile(
+	r"\b(?:[A-Z][A-Za-z]+(?:['’]s)?|[A-Z]{2,})\b"
+)
 
 
 def _amount_unit_family(unit: str) -> str:
@@ -1645,35 +1655,36 @@ def _validate_free_text_claims(
 	packet: dict[str, Any],
 	label: str,
 ) -> None:
-	"""Require qualitative claims to use vocabulary present in cited evidence."""
+	"""Keep narrative numeric-free and ground specific entities and causes."""
 	if _NARRATIVE_DIGIT_PATTERN.search(
 		text
 	) or _NARRATIVE_SPELLED_NUMBER_PATTERN.search(text):
 		raise FilingEvidenceError(f"{label} must be numeric-free")
 	cited_text = [packet["items"][ref]["excerpt"] for ref in evidence_refs]
 	tokens = _NARRATIVE_TOKEN_PATTERN.findall(text)
-	for token in tokens:
-		if token.casefold() in _NARRATIVE_NEUTRAL_WORDS:
+	for match in _NARRATIVE_NAMED_ENTITY_TOKEN_PATTERN.finditer(text):
+		token = match.group()
+		if token.casefold() in _NARRATIVE_GENERIC_WORDS:
+			continue
+		prefix = text[: match.start()].rstrip()
+		if token != token.upper() and (not prefix or prefix[-1] in ".!?"):
 			continue
 		if not any(_literal_token_supported(token, excerpt) for excerpt in cited_text):
 			raise FilingEvidenceError(
-				f"{label} contains unsupported narrative token: {token}"
+				f"{label} contains unsupported named entity: {token}"
 			)
-	meaningful_tokens = [
-		token for token in tokens if token.casefold() not in _NARRATIVE_NEUTRAL_WORDS
-	]
-	if len(meaningful_tokens) > 1 and not any(
-		any(
-			part.casefold() not in _NARRATIVE_NEUTRAL_WORDS
-			for part in (tokens[index], tokens[index + 1])
-		)
-		and any(
-			_literal_token_supported(f"{tokens[index]} {tokens[index + 1]}", excerpt)
+	if _NARRATIVE_CAUSAL_PATTERN.search(text):
+		concrete_terms = [
+			token
+			for token in tokens
+			if token.casefold() not in _NARRATIVE_GENERIC_WORDS
+		]
+		if concrete_terms and not any(
+			_literal_token_supported(token, excerpt)
+			for token in concrete_terms
 			for excerpt in cited_text
-		)
-		for index in range(len(tokens) - 1)
-	):
-		raise FilingEvidenceError(f"{label} lacks an exact multi-word support phrase")
+		):
+			raise FilingEvidenceError(f"{label} contains unsupported causal claim")
 	amount_mentions = _amount_mentions(text)
 	numeric_tokens = _PROSE_NUMBER_PATTERN.findall(text)
 	spelled_amounts = list(_SPELLED_AMOUNT_PATTERN.finditer(text))
