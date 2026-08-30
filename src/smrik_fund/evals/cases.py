@@ -292,15 +292,27 @@ _CASES: tuple[dict[str, Any], ...] = (
 		"evidence_sha256": (
 			"63685B3412F9976578474976320B79F2D333E449B4332F28E99BC99F8F86A694"
 		),
+		# Human-verified known case (Patrik, 2026-08-30; see docs/V1_STATUS.md).
+		# The packet discloses "$6.5 billion of net gains ... from investments
+		# in OpenAI", primarily the dilution gain from the OpenAI
+		# Recapitalization. The dilution-only figure is not separately
+		# disclosed, so the disclosed net-gains amount is the expected amount.
+		"expected_candidate": {
+			"target_line": "Other income (expense), net",
+			"period": "2026-06-30 (FY)",
+			"item_amount": 6.5e9,
+		},
 		"rubric": _rubric(
 			"normalization_judgment",
 			"evidence_grounding",
 			"amount_basis",
 			acceptance=(
-				"Proposed items are genuinely non-recurring and worth removing "
-				"from normalized earnings, grounded in cited evidence, with "
-				"magnitude and direction reported independently. Declining to "
-				"propose is correct when the packet supports no such item."
+				"The packet contains a human-verified normalization item: the "
+				"FY2026 OpenAI recapitalization dilution gain, disclosed as "
+				"$6.5 billion of net gains in Other income (expense), net. "
+				"Proposing it, grounded in cited evidence with magnitude and "
+				"direction reported independently, is required; declining is "
+				"a failure for this case."
 			),
 		),
 	},

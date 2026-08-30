@@ -540,6 +540,22 @@ def test_candidate_matches_expected(candidate_pnl):
 	assert results[-1]["status"] == "FAIL"
 
 
+def test_declining_fails_when_an_expected_candidate_exists(candidate_pnl):
+	expected = {
+		"target_line": "Research and development",
+		"period": "2026-06-30 (FY)",
+		"item_amount": 1.4e9,
+	}
+	results = mechanical.candidate_fields(
+		[], candidate_pnl, PACKET, research_request="need the note", expected=expected
+	)
+	verdicts = {c["id"]: c["status"] for c in results}
+	# A reasoned decline stays NOT_APPLICABLE in general, but it cannot match a
+	# human-verified known case, so the expected-match check must fail.
+	assert verdicts["candidate_found"] == "NOT_APPLICABLE"
+	assert verdicts["candidate_matches_expected"] == "FAIL"
+
+
 def test_scan_findings_requires_at_least_one_movement():
 	assert mechanical.scan_findings([])["status"] == "FAIL"
 	finding = SimpleNamespace(affected_line_refs=["L01", "S02"])

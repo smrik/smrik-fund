@@ -6,7 +6,7 @@ Build order: Section 2 Part F (Tasks 1–12). Nothing outside Part F is V1 work.
 
 Last updated: 2026-08-30
 
-## Are we done? 13 of 16.
+## Are we done? 14 of 16.
 
 | # | Checkpoint | Status | Evidence |
 |---|-----------|--------|----------|
@@ -14,8 +14,8 @@ Last updated: 2026-08-30
 | 2 | Three-year analytical P&L | DONE | analytical_pnl.csv |
 | 3 | Source reconciliation, visible warnings | DONE | reconciliation_checks.csv |
 | 4 | One useful evidence packet | DONE | data/MSFT/03_output/evidence/ |
-| 5 | Analyst finds expected adjustment in the first known case | **BLOCKED** | no known case ever chosen (spec §69 open item); human decision, not code |
-| 6 | Reviewer reviews the candidate correctly | PARTIAL | eval harness tests reviewer; needs the known-case fixture from #5 |
+| 5 | Analyst finds expected adjustment in the first known case | **DONE** | eval run 20260830T151122042664Z: candidate_matches_expected PASS, judge PASS; case msft_analyst_normalization_candidates |
+| 6 | Reviewer reviews the candidate correctly | PARTIAL | reviewer fixtures ran 2026-08-21; known-case reviewer pass happens inside the golden e2e (#16) |
 | 7 | Deterministic validation + materiality runs | DONE | gate implemented, shadow mode per spec §25 |
 | 8 | Safe auto-approve / uncertain to human review | DONE | mechanics work; auto-approval behind feature switch (spec M3, enable at M5) |
 | 9 | adjustment_history.csv preserves history | DONE | 29 proposals recorded, 0 approved |

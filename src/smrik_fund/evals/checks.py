@@ -368,9 +368,10 @@ def candidate_fields(
 		# Declining to propose is a valid outcome, not a failure: an analyst that
 		# invents a candidate from a packet with nothing normalizable in it is
 		# worse than one that says so. It is only a failure when the analyst
-		# returns nothing and offers no reason.
+		# returns nothing and offers no reason - or when a human-verified
+		# expected candidate exists, which no proposal can then match.
 		if research_request:
-			return [
+			results = [
 				check(
 					"candidate_found",
 					"NOT_APPLICABLE",
@@ -380,14 +381,27 @@ def candidate_fields(
 					reason="analyst declined to propose and stated what it needs",
 				)
 			]
-		return [
-			check(
-				"candidate_found",
-				"FAIL",
-				critical=True,
-				reason="analyst proposed no candidates and gave no reason",
+		else:
+			results = [
+				check(
+					"candidate_found",
+					"FAIL",
+					critical=True,
+					reason="analyst proposed no candidates and gave no reason",
+				)
+			]
+		if expected is not None:
+			results.append(
+				check(
+					"candidate_matches_expected",
+					"FAIL",
+					critical=True,
+					expected=expected,
+					stated=[],
+					reason="no candidate proposed for the expected known case",
+				)
 			)
-		]
+		return results
 
 	labels = set(pnl.get("label", pd.Series(dtype=str)).dropna().astype(str))
 	periods = {
