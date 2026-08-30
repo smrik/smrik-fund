@@ -17,12 +17,18 @@ Use Python for deterministic accounting, validation, and calculations.
 
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
+## Scope gate
+
+Before building anything, read `docs/V1_STATUS.md`.
+Only tasks from Section 2 Part F are in scope.
+A task not on that list requires Patrik's explicit written approval.
+
 ## Source of truth
 
 Read the relevant parts of:
 
-- `docs/ai_fund_v1_section_1.md` — product and architecture
-- `docs/ai_fund_v1_section_2.md` — implementation requirements
+- `docs/ai_fund_v1_section_1_updated.md` — product and architecture
+- `docs/ai_fund_v1_section_2_implementation_spec.md` — implementation requirements
 
 Use the current repository to understand existing paths, interfaces, and code.
 
