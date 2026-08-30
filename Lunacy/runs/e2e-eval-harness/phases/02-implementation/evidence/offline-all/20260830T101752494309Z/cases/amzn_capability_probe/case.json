@@ -1,0 +1,62 @@
+{
+  "case_id": "amzn_capability_probe",
+  "ticker": "AMZN",
+  "suites": [
+    "development"
+  ],
+  "workflow": "filing",
+  "case_status": "BLOCKED",
+  "capability": "UNAVAILABLE",
+  "case_blocked_reason": "No frozen AMZN accession, source, scan, or finding is available.",
+  "product_status": "NOT_RUN",
+  "product_valid": null,
+  "judge_status": "NOT_RUN",
+  "qualitative_verdict": null,
+  "checks": [],
+  "normalized_result": null,
+  "artifacts": [],
+  "calls": {
+    "product": 0,
+    "judge": 0,
+    "retries": 0
+  },
+  "execution": {
+    "product_model": "gpt-5.6-luna",
+    "product_reasoning_effort": "high",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "high"
+  },
+  "frozen_inputs": {
+    "source_artifact": null,
+    "scan_artifact": null,
+    "investigation_artifact": null,
+    "segment_analytics_artifact": null,
+    "segment_reconciliation_artifact": null,
+    "accession": null,
+    "filing_period": null,
+    "finding_rank": null,
+    "finding_refs": []
+  },
+  "case_dir": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\02-implementation\\evidence\\offline-all\\20260830T101752494309Z\\cases\\amzn_capability_probe",
+  "definition": {
+    "case_hash": "438909a2276633f7ab03373e868159800736bc9fc8870026e6a3fb1422acef28",
+    "rubric_hash": "3cb5c6979daebdf0b7acdc27991a0a512f1de1a9fce0397184c3d1d58c49cabc",
+    "check_hash": "f8393190d1a281171d84435da58feac700d5259523fccec0a7a62bcaf15422c7",
+    "source_hashes": {
+      "source": null,
+      "scan": null,
+      "investigation": null,
+      "segment_analytics": null,
+      "segment_reconciliation": null
+    }
+  },
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "0FA761C89D0CCA1FAC8E05A8D2DBECB39D083A17EEECA30136FF612CF987F328",
+    "relevant_untracked_count": 175,
+    "error": null
+  }
+}

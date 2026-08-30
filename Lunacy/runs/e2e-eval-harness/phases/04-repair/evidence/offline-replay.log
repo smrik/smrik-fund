@@ -1,0 +1,4 @@
+Command: $env:PYTHONPATH='src'; $env:OPENAI_API_KEY=''; C:\Users\patri\miniconda3\envs\ai-fund\python.exe -c "from tempfile import TemporaryDirectory; from smrik_fund.eval_core import run_iteration; ..."
+Result: offline replay completed; call_budget.attempts=0.
+Cases: growth COMPLETED/product_valid=false; profitability COMPLETED/product_valid=true; OpenAI COMPLETED/product_valid=false; Opex COMPLETED/product_valid=false; AMZN/GOOGL NOT_RUN/BLOCKED.
+Warning: EdgarTools locale-corrupted-cache cleanup reported WinError 5; no model call was made.

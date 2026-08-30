@@ -1,0 +1,827 @@
+{
+  "case_id": "msft_segment_profitability_margin",
+  "ticker": "MSFT",
+  "suites": [
+    "development"
+  ],
+  "workflow": "filing",
+  "rubric": {
+    "dimensions": [
+      "movement_scope",
+      "segment_profitability_margin",
+      "evidence_grounding",
+      "no_residual_plug"
+    ],
+    "acceptance": "Segment margins and contributions are grounded; any residual remains explicit and not-computable."
+  },
+  "case_status": "READY",
+  "capability": "AVAILABLE",
+  "case_blocked_reason": null,
+  "product_status": "COMPLETED",
+  "product_valid": true,
+  "judge_status": "JUDGE_NOT_RUN",
+  "qualitative_verdict": null,
+  "checks": [
+    {
+      "id": "source_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+      "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+    },
+    {
+      "id": "source_manifest_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\manifest.json",
+      "sha256": "3942859034A9DA686A26F657B79965F16D1A982F5390806145A3EFD4F65692B3"
+    },
+    {
+      "id": "scan_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\analytical_scan_20260828T191302094324Z.json",
+      "sha256": "68D884344368357E006CBF0ADDB538BBD9C8A43931F3305263B0D0B585914C77"
+    },
+    {
+      "id": "investigation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\filing_investigation_04_20260830T082208881748Z.json",
+      "sha256": "FA24555F061BEC84B548ED9C606F7B5F97ED3BCF9639F83837ADD9E4B453278C"
+    },
+    {
+      "id": "evidence_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\evidence\\finding_04_20260830T082208881748Z_initial.md",
+      "sha256": "D9237EDF435194CCF747D20F5AF1748423EA2754548FA76AEE092C4F07F22AFE"
+    },
+    {
+      "id": "analytical_pnl_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analytical_pnl.csv",
+      "sha256": "0CC3C663056E3CF4DC1F3DEEE956566D849472742F822632614212EF2F0432E0"
+    },
+    {
+      "id": "reconciliation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\reconciliation_checks.csv",
+      "sha256": "E63747C2E1F64203934A097106D5053247A3C21E22D39F7445F0DE40EF14F0A9"
+    },
+    {
+      "id": "segment_analytics_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\segment_analytics.csv",
+      "sha256": "5E0EF5152A052E63B655817DF80741F30A99AF65FC1B237EF23710EF625C81FE"
+    },
+    {
+      "id": "segment_reconciliation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\segment_reconciliation_checks.csv",
+      "sha256": "B22983A66760E57B65A1980ECFC505B81D0CDF6847F61E2F59C38C02C310F3DC"
+    },
+    {
+      "id": "packet_identity",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\evidence\\finding_04_20260830T082208881748Z_initial.md",
+      "bad_refs": []
+    },
+    {
+      "id": "accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "source_locator",
+      "status": "PASS",
+      "critical": true,
+      "bad_refs": []
+    },
+    {
+      "id": "payload_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "payload_accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "period_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "finding_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "result_schema",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "evidence_refs",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "narrative_numeric_free",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "period_sign_span",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "observed_movement",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "reconciliation",
+      "status": "PASS",
+      "critical": true,
+      "status_value": "not_computable",
+      "not_computable": true
+    },
+    {
+      "id": "expected_checkpoint",
+      "status": "PASS",
+      "critical": false,
+      "reason": "not-computable bridge has explicit null checkpoint fields",
+      "definition_kind": "deterministic_reconciliation_context"
+    },
+    {
+      "id": "quantification",
+      "status": "NOT_RUN",
+      "critical": false,
+      "reason": "no quantified driver was disclosed"
+    },
+    {
+      "id": "expansion",
+      "status": "NOT_RUN",
+      "critical": false,
+      "reason": "query expansion was absent or not completed"
+    }
+  ],
+  "declared_checks": [
+    {
+      "id": "packet_identity",
+      "name": "Packet identity",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "F11CBAAF594CFC7BC6A4FE2FB1A012401354F44CDAFAA43163AA59A86E4DE148",
+      "observed_check_count": 1
+    },
+    {
+      "id": "accession",
+      "name": "Accession",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "F76306B3F89C63290342001DB33723652534F65F59FAD461AB4A4779651746BB",
+      "observed_check_count": 1
+    },
+    {
+      "id": "source_locator",
+      "name": "Source locator",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "AF8C09FB1AB92F23DDE4DFB7DF4E61409403150020C04087A53B34B03B479464",
+      "observed_check_count": 1
+    },
+    {
+      "id": "result_schema",
+      "name": "Result schema",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "4A48018E1517636B7D8DE9E81D021807CF7B416541DE5ECDEBD7B6D3445C8AB3",
+      "observed_check_count": 1
+    },
+    {
+      "id": "evidence_refs",
+      "name": "Evidence references",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "3D8ABD5A92A90C6729CFB7DD0199943B5BA4F0BC2E0A48E3029F4EFEE043B218",
+      "observed_check_count": 1
+    },
+    {
+      "id": "narrative_numeric_free",
+      "name": "Narrative claims",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "786EF4CCB10284DD3FADEF232293E3BCAC9DCB3E09F43344BBEEEB84E8707871",
+      "observed_check_count": 1
+    },
+    {
+      "id": "period_sign_span",
+      "name": "Period/sign/span",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "1D1D564A73329C47411107579A56F5C4C64A757CA36F980C3D0E2FBDD42C94B1",
+      "observed_check_count": 1
+    },
+    {
+      "id": "observed_movement",
+      "name": "Observed movement",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "6CC7279637FD202B61522FA108AE8527E4BE756CE7000AC5465DBD2640EC348D",
+      "observed_check_count": 1
+    },
+    {
+      "id": "reconciliation",
+      "name": "Deterministic reconciliation",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "42CB831F31F39BD6E9C342DE6593F7AE404B4FC9A9CE5636B8480DC9E5EC28A3",
+      "observed_check_count": 1
+    },
+    {
+      "id": "quantification",
+      "name": "Quantification",
+      "critical": false,
+      "status": "NOT_RUN",
+      "reason": "no quantified driver was disclosed",
+      "definition_hash": "ECCACE54D628C0D5180D6AB5EAA47D58C4F74C0283079BAD390284F9C70AA9DE",
+      "observed_check_count": 1
+    },
+    {
+      "id": "expansion",
+      "name": "Grounded expansion",
+      "critical": false,
+      "status": "NOT_RUN",
+      "reason": "query expansion was absent or not completed",
+      "definition_hash": "94B1907C8584FF50110BAD9E4A9867F40599312BF2CE2B32E84C2D180803D9A7",
+      "observed_check_count": 1
+    },
+    {
+      "id": "expected_checkpoint",
+      "name": "Case checkpoint",
+      "critical": false,
+      "status": "PASS",
+      "reason": "not-computable bridge has explicit null checkpoint fields",
+      "definition_hash": "BB00ED4F032E7157E4E87E37CE9A1F73D427221F2A036DD25E2B2E2C2A220BB3",
+      "observed_check_count": 1
+    }
+  ],
+  "normalized_result": {
+    "status": "COMPLETED",
+    "finding_rank": 4,
+    "finding_refs": [
+      "L11",
+      "S02",
+      "S04",
+      "S06"
+    ],
+    "observed_movement": [
+      {
+        "line_ref": "L11",
+        "source_label": "Operating income",
+        "concept": "us-gaap_OperatingIncomeLoss",
+        "standard_concept": "OperatingIncomeLoss",
+        "reference_type": "consolidated",
+        "scope": "consolidated",
+        "periods": {
+          "2026-06-30 (FY)": 155237000000.0,
+          "2025-06-30 (FY)": 128528000000.0,
+          "2024-06-30 (FY)": 109433000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 26709000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 19095000000.0
+          }
+        ]
+      },
+      {
+        "line_ref": "S02",
+        "reference_type": "segment",
+        "scope": "segment",
+        "segment_name": "Intelligent Cloud",
+        "segment_label": "Intelligent Cloud",
+        "segment_axis": "us-gaap_StatementBusinessSegmentsAxis",
+        "segment_member": "msft:IntelligentCloudMember",
+        "metric": "OperatingIncomeLoss",
+        "source_label": "Intelligent Cloud",
+        "concept": "us-gaap:OperatingIncomeLoss",
+        "standard_concept": null,
+        "periods": {
+          "2026-06-30 (FY)": 56972000000.0,
+          "2025-06-30 (FY)": 44589000000.0,
+          "2024-06-30 (FY)": 37813000000.0
+        },
+        "reported_values": {
+          "2026-06-30 (FY)": 56972000000.0,
+          "2025-06-30 (FY)": 44589000000.0,
+          "2024-06-30 (FY)": 37813000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 12383000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 6776000000.0
+          }
+        ],
+        "derived_context": {
+          "2026-06-30 (FY)": {
+            "absolute_yoy_change": 12383000000.0,
+            "yoy_growth": 0.2777142344524435,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.4134667721404155,
+            "operating_margin_bps_change": -61.35166409436232,
+            "operating_income_growth_contribution": 0.4636264929424538
+          },
+          "2025-06-30 (FY)": {
+            "absolute_yoy_change": 6776000000.0,
+            "yoy_growth": 0.1791976304445561,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.4196019385498518,
+            "operating_margin_bps_change": -127.24504329504282,
+            "operating_income_growth_contribution": 0.3548572924849437
+          },
+          "2024-06-30 (FY)": {
+            "absolute_yoy_change": null,
+            "yoy_growth": null,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.432326442879356,
+            "operating_margin_bps_change": null,
+            "operating_income_growth_contribution": null
+          }
+        },
+        "source_identity": {
+          "2026-06-30 (FY)": {
+            "fact_id": "F_9b8b4fa4-c572-4ce0-aee7-74cae3b40bda",
+            "context_ref": "C_c4b4c258-8b46-4318-86c1-218c3d731d53",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2026-06-30",
+            "period_type": "duration",
+            "period_start": "2025-07-01",
+            "fiscal_year": "2026",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2025-06-30 (FY)": {
+            "fact_id": "F_47bcc1ac-8829-4466-a8d4-46edd96e84a3",
+            "context_ref": "C_bbdfdc9b-8974-4595-a833-1a79001b6023",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2025-06-30",
+            "period_type": "duration",
+            "period_start": "2024-07-01",
+            "fiscal_year": "2025",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2024-06-30 (FY)": {
+            "fact_id": "F_7a31d3e1-eabd-48ac-a4d3-10c6b4c1c45e",
+            "context_ref": "C_999991d0-bcf6-4d24-b173-234184bcf5b4",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2024-06-30",
+            "period_type": "duration",
+            "period_start": "2023-07-01",
+            "fiscal_year": "2024",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          }
+        }
+      },
+      {
+        "line_ref": "S04",
+        "reference_type": "segment",
+        "scope": "segment",
+        "segment_name": "More Personal Computing",
+        "segment_label": "More Personal Computing",
+        "segment_axis": "us-gaap_StatementBusinessSegmentsAxis",
+        "segment_member": "msft:MorePersonalComputingMember",
+        "metric": "OperatingIncomeLoss",
+        "source_label": "More Personal Computing",
+        "concept": "us-gaap:OperatingIncomeLoss",
+        "standard_concept": null,
+        "periods": {
+          "2026-06-30 (FY)": 14386000000.0,
+          "2025-06-30 (FY)": 14166000000.0,
+          "2024-06-30 (FY)": 11959000000.0
+        },
+        "reported_values": {
+          "2026-06-30 (FY)": 14386000000.0,
+          "2025-06-30 (FY)": 14166000000.0,
+          "2024-06-30 (FY)": 11959000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 220000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 2207000000.0
+          }
+        ],
+        "derived_context": {
+          "2026-06-30 (FY)": {
+            "absolute_yoy_change": 220000000.0,
+            "yoy_growth": 0.0155301425949456,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.2661511137423222,
+            "operating_margin_bps_change": 69.33195756631704,
+            "operating_income_growth_contribution": 0.0082369238833352
+          },
+          "2025-06-30 (FY)": {
+            "absolute_yoy_change": 2207000000.0,
+            "yoy_growth": 0.1845472029433899,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.2592179179856905,
+            "operating_margin_bps_change": 239.80497158750003,
+            "operating_income_growth_contribution": 0.1155799947630269
+          },
+          "2024-06-30 (FY)": {
+            "absolute_yoy_change": null,
+            "yoy_growth": null,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.2352374208269405,
+            "operating_margin_bps_change": null,
+            "operating_income_growth_contribution": null
+          }
+        },
+        "source_identity": {
+          "2026-06-30 (FY)": {
+            "fact_id": "F_48542f1f-9e4d-4e36-9d5d-fc0eefdf03a1",
+            "context_ref": "C_2a3f7495-56da-49b0-8095-4459ec5fae64",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2026-06-30",
+            "period_type": "duration",
+            "period_start": "2025-07-01",
+            "fiscal_year": "2026",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2025-06-30 (FY)": {
+            "fact_id": "F_8adf57a5-1d2c-4da2-abe7-b622ae25de82",
+            "context_ref": "C_dea1eb85-57ec-415a-b1e9-eb18c1f2071e",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2025-06-30",
+            "period_type": "duration",
+            "period_start": "2024-07-01",
+            "fiscal_year": "2025",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2024-06-30 (FY)": {
+            "fact_id": "F_60e4074a-9ba2-4edd-811c-d9dfa22017ce",
+            "context_ref": "C_42e8507e-316a-47fa-8c5e-2c0560a8de33",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2024-06-30",
+            "period_type": "duration",
+            "period_start": "2023-07-01",
+            "fiscal_year": "2024",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          }
+        }
+      },
+      {
+        "line_ref": "S06",
+        "reference_type": "segment",
+        "scope": "segment",
+        "segment_name": "Productivity and Business Processes",
+        "segment_label": "Productivity and Business Processes",
+        "segment_axis": "us-gaap_StatementBusinessSegmentsAxis",
+        "segment_member": "msft:ProductivityAndBusinessProcessesMember",
+        "metric": "OperatingIncomeLoss",
+        "source_label": "Productivity and Business Processes",
+        "concept": "us-gaap:OperatingIncomeLoss",
+        "standard_concept": null,
+        "periods": {
+          "2026-06-30 (FY)": 83879000000.0,
+          "2025-06-30 (FY)": 69773000000.0,
+          "2024-06-30 (FY)": 59661000000.0
+        },
+        "reported_values": {
+          "2026-06-30 (FY)": 83879000000.0,
+          "2025-06-30 (FY)": 69773000000.0,
+          "2024-06-30 (FY)": 59661000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 14106000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 10112000000.0
+          }
+        ],
+        "derived_context": {
+          "2026-06-30 (FY)": {
+            "absolute_yoy_change": 14106000000.0,
+            "yoy_growth": 0.2021698937984606,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.599152832938084,
+            "operating_margin_bps_change": 216.0958320710138,
+            "operating_income_growth_contribution": 0.528136583174211
+          },
+          "2025-06-30 (FY)": {
+            "absolute_yoy_change": 10112000000.0,
+            "yoy_growth": 0.1694909572417491,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.5775432497309826,
+            "operating_margin_bps_change": 190.2424579913464,
+            "operating_income_growth_contribution": 0.5295627127520294
+          },
+          "2024-06-30 (FY)": {
+            "absolute_yoy_change": null,
+            "yoy_growth": null,
+            "revenue_share": null,
+            "revenue_share_change_bps": null,
+            "revenue_growth_contribution": null,
+            "operating_margin": 0.558519003931848,
+            "operating_margin_bps_change": null,
+            "operating_income_growth_contribution": null
+          }
+        },
+        "source_identity": {
+          "2026-06-30 (FY)": {
+            "fact_id": "F_746d67eb-c119-4d82-879e-bd440af87931",
+            "context_ref": "C_007d085b-16be-487c-b22c-4e0afdd5cc58",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2026-06-30",
+            "period_type": "duration",
+            "period_start": "2025-07-01",
+            "fiscal_year": "2026",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2025-06-30 (FY)": {
+            "fact_id": "F_f1f2ff9a-dfc1-4fd9-9d5c-182bd8ab8bf0",
+            "context_ref": "C_a3ad6fc8-9442-4077-bc9b-0655ddf1d229",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2025-06-30",
+            "period_type": "duration",
+            "period_start": "2024-07-01",
+            "fiscal_year": "2025",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          },
+          "2024-06-30 (FY)": {
+            "fact_id": "F_87d12a6f-7757-4f35-adff-722c3ac038cd",
+            "context_ref": "C_5cb0dd61-09b2-45d5-9e75-45ce0f75c065",
+            "accession": "0001193125-26-323660",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+            "source_locator": null,
+            "unit": "U_USD",
+            "currency": "USD",
+            "period_end": "2024-06-30",
+            "period_type": "duration",
+            "period_start": "2023-07-01",
+            "fiscal_year": "2024",
+            "fiscal_period": "FY",
+            "filing_date": "2026-07-29",
+            "form_type": "10-K",
+            "reported_basis": "reported",
+            "statement_role": "http://www.microsoft.com/20260630/taxonomy/role/Role_StatementINCOMESTATEMENTS"
+          }
+        }
+      }
+    ],
+    "drivers": [
+      {
+        "description": "driven by growth in Productivity and Business Processes and Intelligent Cloud",
+        "amount": null,
+        "amount_unit": "unknown",
+        "period": null,
+        "effect": "increased_line",
+        "amount_basis": "unquantified",
+        "evidence_refs": [
+          "E1"
+        ]
+      }
+    ],
+    "reconciliation": {
+      "status": "not_computable",
+      "target_line_ref": null,
+      "target_source_label": null,
+      "target_scope": null,
+      "period": null,
+      "previous_period": null,
+      "observed_amount": null,
+      "observed_unit": "dollars",
+      "observed_amount_comparable": null,
+      "comparison_unit": "usd_billions",
+      "known_disclosed_contribution": null,
+      "known_disclosed_unit": "usd_billions",
+      "unresolved_difference": null,
+      "difference_is_reported_plug": false,
+      "disclosed_facts": [],
+      "reason_code": "no_exact_two_period_pair",
+      "reason": "packet has no exact target-labelled two-period respectively disclosure"
+    },
+    "metadata": {
+      "ticker": "MSFT",
+      "filing_accession": "0001193125-26-323660",
+      "filing_period": "2026-06-30",
+      "schema_version": "filing-investigation-v3"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\filing_investigation_04_20260830T082208881748Z.json",
+      "kind": "frozen_investigation",
+      "sha256": "FA24555F061BEC84B548ED9C606F7B5F97ED3BCF9639F83837ADD9E4B453278C",
+      "size": 65460
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_segment_profitability_margin\\stdout.txt",
+      "kind": "stdout",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_segment_profitability_margin\\stderr.txt",
+      "kind": "stderr",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    }
+  ],
+  "calls": {
+    "product": 0,
+    "judge": 0,
+    "retries": 0
+  },
+  "execution": {
+    "product_model": "gpt-5.6-luna",
+    "product_reasoning_effort": "high",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "high"
+  },
+  "frozen_inputs": {
+    "source_artifact": "data/MSFT/01_source/edgar/filings/0001193125-26-323660.txt",
+    "source_manifest_artifact": "data/MSFT/01_source/edgar/manifest.json",
+    "scan_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/analysis/analytical_scan_20260828T191302094324Z.json",
+    "investigation_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/analysis/filing_investigation_04_20260830T082208881748Z.json",
+    "evidence_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/evidence/finding_04_20260830T082208881748Z_initial.md",
+    "analytical_pnl_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/analytical_pnl.csv",
+    "reconciliation_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/reconciliation_checks.csv",
+    "segment_analytics_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/segment_analytics.csv",
+    "segment_reconciliation_artifact": "data/live-segment-enrichment-i1/MSFT/03_output/segment_reconciliation_checks.csv",
+    "accession": "0001193125-26-323660",
+    "filing_period": "2026-06-30",
+    "finding_rank": 4,
+    "finding_refs": [
+      "L11",
+      "S02",
+      "S04",
+      "S06"
+    ]
+  },
+  "case_dir": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_segment_profitability_margin",
+  "definition": {
+    "case_hash": "e2543cc097d19e813c77bd881125d017fb5cc91d695b5f224dfb21700bf445fd",
+    "rubric_hash": "0b73541c477c719a34db6cebcec9d5f2df0955a0d966c2b6a4287b7d448011c4",
+    "check_hash": "3be0dda359047f3347185939e95960450b84ec3e158eb321152f088893604773",
+    "source_hashes": {
+      "source": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68",
+      "source_manifest": "3942859034A9DA686A26F657B79965F16D1A982F5390806145A3EFD4F65692B3",
+      "scan": "68D884344368357E006CBF0ADDB538BBD9C8A43931F3305263B0D0B585914C77",
+      "investigation": "FA24555F061BEC84B548ED9C606F7B5F97ED3BCF9639F83837ADD9E4B453278C",
+      "evidence": "D9237EDF435194CCF747D20F5AF1748423EA2754548FA76AEE092C4F07F22AFE",
+      "analytical_pnl": "0CC3C663056E3CF4DC1F3DEEE956566D849472742F822632614212EF2F0432E0",
+      "reconciliation": "E63747C2E1F64203934A097106D5053247A3C21E22D39F7445F0DE40EF14F0A9",
+      "segment_analytics": "5E0EF5152A052E63B655817DF80741F30A99AF65FC1B237EF23710EF625C81FE",
+      "segment_reconciliation": "B22983A66760E57B65A1980ECFC505B81D0CDF6847F61E2F59C38C02C310F3DC"
+    }
+  },
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "4E7484ABB39634A94D243E80341172601860B1023251B9C0BCAC5D8EFFC5F09D",
+    "relevant_untracked_count": 183,
+    "error": null
+  },
+  "metadata": {
+    "execution_mode": "frozen_replay",
+    "source_artifact": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\filing_investigation_04_20260830T082208881748Z.json"
+  },
+  "payload_status": "completed",
+  "state_isolation": {
+    "before": {
+      "root": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\03_output",
+      "file_count": 1225,
+      "sha256": "5A072446E41DA467C8ED93F3A876AF42C44CD4A2D557735860517C129D8C2689"
+    },
+    "after": {
+      "root": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\03_output",
+      "file_count": 1225,
+      "sha256": "5A072446E41DA467C8ED93F3A876AF42C44CD4A2D557735860517C129D8C2689"
+    },
+    "unchanged": true
+  }
+}

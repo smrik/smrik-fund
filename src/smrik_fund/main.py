@@ -13,6 +13,8 @@ from .ingestion.adjustment_analysis import (
 	DEFAULT_REASONING_EFFORT,
 	AdjustmentAnalysisError,
 	run_analyst,
+	run_analyst_on_investigation,
+	save_analyst_result,
 	valid_item_key,
 )
 from .ingestion.adjustments import (
@@ -2377,6 +2379,10 @@ def investigate(
 		default=Path("data"),
 		help="Workspace root containing data outputs.",
 	),
+	propose: bool = typer.Option(
+		default=False,
+		help="Also run the Analyst on the investigation to propose candidates.",
+	),
 ) -> None:
 	"""Investigate one saved Analytical Scan finding from its filing."""
 	normalized_ticker = ticker.strip().upper()
@@ -2449,6 +2455,78 @@ def investigate(
 			f" ({payload.get('error_message', 'see artifact')})",
 			err=True,
 		)
+		return
+
+	if not propose:
+		return
+	try:
+		result, metadata = run_analyst_on_investigation(
+			normalized_ticker,
+			pnl,
+			payload,
+			model=model,
+			reasoning_effort=reasoning_effort,
+		)
+	except (AdjustmentAnalysisError, OSError, ValueError, TypeError) as exc:
+		raise typer.BadParameter(str(exc)) from exc
+
+	analyst_path = save_analyst_result(
+		normalized_ticker, result, metadata, output_root
+	)
+	typer.echo(f"Saved normalization candidates: {analyst_path}")
+	typer.echo(f"Candidates proposed: {len(result.candidates)}")
+	for candidate in result.candidates:
+		amount = "unquantified" if candidate.item_amount is None else (
+			f"{candidate.item_amount:,.0f} ({candidate.item_effect_on_line})"
+		)
+		typer.echo(
+			f"  {candidate.target_line} | {candidate.period} | "
+			f"{amount} | basis={candidate.amount_basis}"
+		)
+	if result.research_request:
+		typer.echo(f"Research request: {result.research_request}")
+
+
+@app.command()
+def eval(
+	ticker: str | None = typer.Argument(
+		default=None,
+		help="Ticker to evaluate; omit to include every frozen case.",
+	),
+	suite: str | None = typer.Option(
+		default=None,
+		help="Case suite: development, regression, or holdout.",
+	),
+	case: str | None = typer.Option(default=None, help="Run one frozen case id."),
+	baseline: Path | None = typer.Option(
+		default=None,
+		help="Iteration JSON or run directory to compare this run against.",
+	),
+	output_root: Path = typer.Option(
+		default=Path("data/evals"),
+		help="Evaluation artifact root; product data is never written here.",
+	),
+	judge: bool = typer.Option(default=True, help="Run the qualitative judge."),
+	max_calls: int | None = typer.Option(
+		default=None, help="Optional hard ceiling on live product calls."
+	),
+	preflight: str | None = typer.Option(
+		default=None, help="Pytest target to run once before the cases."
+	),
+) -> None:
+	"""Execute frozen evaluation cases against the live product."""
+	from .evals.cli import run as run_eval
+
+	run_eval(
+		ticker,
+		suite=suite,
+		case=case,
+		baseline=baseline,
+		output_root=output_root,
+		judge=judge,
+		max_calls=max_calls,
+		preflight=preflight,
+	)
 
 
 @app.command()

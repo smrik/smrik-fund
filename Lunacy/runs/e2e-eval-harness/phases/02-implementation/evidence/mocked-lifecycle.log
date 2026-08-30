@@ -1,0 +1,8 @@
+Mocked lifecycle proof (2026-08-30)
+completed COMPLETED True COMPLETED 2 1 1
+rejected VALIDATION_REJECTED JUDGE_SKIPPED True True
+blocked BLOCKED UNAVAILABLE {'product': 0, 'judge': 0, 'retries': 0} 0
+
+The completed line is product status, product-valid, judge status, total attempts,
+and fake product/judge call counts. Rejected confirms an UNTRUSTED diagnostic;
+blocked confirms zero calls.

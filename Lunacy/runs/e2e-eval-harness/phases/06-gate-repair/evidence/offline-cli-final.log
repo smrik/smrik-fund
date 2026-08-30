@@ -1,0 +1,10 @@
+HARNESS READY: 20260830T120717604580Z
+Definition: 96C68409FC9580C0C8A0F5A5AB86412FCA21D143F57CC6D1389B9FF6348FE6CD
+Model attempts: 0/6
+Saved iteration: C:\Projects\finance\smrik-fund\Lunacy\runs\e2e-eval-harness\phases\06-gate-repair\evidence\offline-proof-final\20260830T120717604580Z\iteration.json
+MSFT msft_segment_growth_mix: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_segment_profitability_margin: READY / COMPLETED / JUDGE_NOT_RUN
+MSFT msft_openai_nonoperating_quantified: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_operating_expense_multi_driver: READY / COMPLETED / JUDGE_SKIPPED
+AMZN amzn_capability_probe: BLOCKED / NOT_RUN / NOT_RUN
+GOOGL googl_holdout_capability_probe: BLOCKED / NOT_RUN / NOT_RUN

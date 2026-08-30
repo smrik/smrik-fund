@@ -28,12 +28,13 @@ from .filing import (
 	retrieve_filing_evidence,
 	validate_evidence_refs,
 )
+from .segments import assign_segment_refs
 from .statements import ANNUAL_PERIOD_PATTERN
 
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 EXPANSION_PROMPT_VERSION = "filing-query-expansion-v1"
-INVESTIGATION_PROMPT_VERSION = "financial-investigation-v5"
+INVESTIGATION_PROMPT_VERSION = "financial-investigation-v6"
 SCHEMA_VERSION = "filing-investigation-v3"
 MAX_FINDINGS = 8
 MAX_QUERIES = 3
@@ -60,18 +61,634 @@ class FilingInvestigationError(RuntimeError):
 	"""A finding investigation cannot continue safely."""
 
 
-def _reject_segment_refs(finding: AnalyticalScanFinding) -> None:
-	"""Keep analytical-only segment refs out of the consolidated P&L boundary."""
-	segment_refs = [
-		ref for ref in finding.affected_line_refs if _BARE_SEGMENT_REF.fullmatch(ref)
+_SEGMENT_SOURCE_COLUMNS = (
+	"segment_axis",
+	"segment_member",
+	"segment_label",
+	"metric",
+	"period",
+	"reported_value",
+	"numeric_value",
+	"unit",
+	"accession",
+	"source_url",
+	"fact_status",
+	"segment_ref",
+)
+_SEGMENT_DERIVED_COLUMNS = (
+	"absolute_yoy_change",
+	"yoy_growth",
+	"revenue_share",
+	"revenue_share_change_bps",
+	"revenue_growth_contribution",
+	"operating_margin",
+	"operating_margin_bps_change",
+	"operating_income_growth_contribution",
+)
+_SEGMENT_DERIVED_ALIASES = {
+	"revenue_share_bps_change": "revenue_share_change_bps",
+	"margin_bps_change": "operating_margin_bps_change",
+	"operating_growth_contribution": "operating_income_growth_contribution",
+}
+_SEGMENT_IDENTITY_COLUMNS = (
+	"fact_id",
+	"context_ref",
+	"accession",
+	"source_url",
+	"source_locator",
+	"unit",
+	"currency",
+	"period_end",
+	"period_type",
+	"period_start",
+	"fiscal_year",
+	"fiscal_period",
+	"filing_date",
+	"form_type",
+	"reported_basis",
+	"statement_role",
+)
+_SEGMENT_GROUP_IDENTITY_COLUMNS = (
+	"segment_axis",
+	"segment_member",
+	"segment_label",
+	"metric",
+	"unit",
+	"currency",
+	"accession",
+	"source_url",
+	"source_locator",
+	"period_type",
+	"filing_date",
+	"form_type",
+	"reported_basis",
+	"statement_role",
+)
+_SEGMENT_METRIC_LABELS = {
+	"Revenue": "revenue",
+	"OperatingIncomeLoss": "operating income",
+}
+
+
+def _annual_periods(pnl: pd.DataFrame) -> list[str]:
+	return [
+		column
+		for column in pnl.columns
+		if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
 	]
-	if segment_refs:
+
+
+def _segment_ref_persistence_status(segments: pd.DataFrame) -> bool | None:
+	status = segments.attrs.get("segment_refs_persisted")
+	if isinstance(status, bool):
+		return status
+	refs = segments.get("segment_ref")
+	if refs is None:
+		return False
+	return bool(refs.map(_text).ne("").any())
+
+
+def _validate_segment_source_snapshot(segments: pd.DataFrame) -> None:
+	"""Reject source-grain identity changes after a persisted frame was loaded."""
+	snapshot = segments.attrs.get("source_identity_snapshot")
+	if snapshot is None:
+		return
+	if (
+		not isinstance(snapshot, tuple)
+		or len(snapshot) != 2
+		or not isinstance(snapshot[0], tuple)
+		or not isinstance(snapshot[1], tuple)
+	):
 		raise FilingInvestigationError(
-			"S-ref filing investigation is unsupported: segment refs are "
-			"analytical-only and cannot be indexed as P&L rows ("
-			+ ", ".join(segment_refs)
-			+ ")"
+			"persisted segment source identity snapshot is invalid"
 		)
+	columns, expected_rows = snapshot
+	if any(not isinstance(column, str) or column not in segments for column in columns):
+		raise FilingInvestigationError(
+			"persisted segment source identity snapshot is invalid"
+		)
+	if len(expected_rows) != len(segments):
+		raise FilingInvestigationError(
+			"persisted segment source identity drift: row count changed"
+		)
+	for position, (_, row) in enumerate(segments.iterrows()):
+		actual = tuple(_text(row.get(column)) for column in columns)
+		expected = expected_rows[position]
+		if not isinstance(expected, tuple) or actual != expected:
+			if not isinstance(expected, tuple) or len(expected) != len(columns):
+				drift = "unknown"
+			else:
+				drift = next(
+					(
+						column
+						for column, actual_value, expected_value in zip(
+							columns, actual, expected, strict=True
+						)
+						if actual_value != expected_value
+					),
+					"unknown",
+				)
+			raise FilingInvestigationError(
+				f"persisted segment source identity drift at row {position}: {drift}"
+			)
+
+
+def _segment_pnl_value(
+	pnl: pd.DataFrame, standard_concept: str, period: str
+) -> float | None:
+	"""Read one unadjusted consolidated value for a derived-context check."""
+	if period not in pnl or "standard_concept" not in pnl:
+		return None
+	matches = pnl[
+		pnl["standard_concept"].astype("string").eq(standard_concept).fillna(False)
+	]
+	return _finite(matches.iloc[0][period]) if len(matches) == 1 else None
+
+
+def _segment_derived_context(
+	pnl: pd.DataFrame, segments: pd.DataFrame, periods: Sequence[str]
+) -> dict[tuple[str, str], dict[str, float | None]]:
+	"""Recalculate expected fields without rebuilding refs or a segment artifact."""
+	by_key: dict[tuple[str, str, str], pd.Series] = {}
+	for _, row in segments.iterrows():
+		key = (_text(row.get("segment_member")), _text(row.get("metric")), _text(row.get("period")))
+		if all(key):
+			by_key.setdefault(key, row)
+	positions = {period: index for index, period in enumerate(periods)}
+	expected: dict[tuple[str, str], dict[str, float | None]] = {}
+	for _, row in segments.iterrows():
+		ref = _text(row.get("segment_ref"))
+		member = _text(row.get("segment_member"))
+		metric = _text(row.get("metric"))
+		period = _text(row.get("period"))
+		if not ref or period not in positions:
+			continue
+		current = _finite(row.get("numeric_value"))
+		position = positions[period]
+		previous = None
+		if position + 1 < len(periods):
+			previous_row = by_key.get((member, metric, periods[position + 1]))
+			if previous_row is not None and _text(previous_row.get("fact_status")) == "PASS":
+				previous = _finite(previous_row.get("numeric_value"))
+		absolute = None if current is None or previous is None else current - previous
+		growth = (
+			None
+			if current is None or previous is None or current <= 0 or previous <= 0
+			else current / previous - 1.0
+		)
+		values = {
+			"absolute_yoy_change": absolute,
+			"yoy_growth": growth,
+			"revenue_share": None,
+			"revenue_share_change_bps": None,
+			"revenue_growth_contribution": None,
+			"operating_margin": None,
+			"operating_margin_bps_change": None,
+			"operating_income_growth_contribution": None,
+		}
+		if metric == "Revenue":
+			consolidated = _segment_pnl_value(pnl, "Revenue", period)
+			prior_consolidated = (
+				_segment_pnl_value(pnl, "Revenue", periods[position + 1])
+				if position + 1 < len(periods)
+				else None
+			)
+			share = (
+				None
+				if current is None or consolidated is None or consolidated <= 0
+				else current / consolidated
+			)
+			prior_share = (
+				None
+				if previous is None
+				or prior_consolidated is None
+				or prior_consolidated <= 0
+				else previous / prior_consolidated
+			)
+			values.update(
+				{
+					"revenue_share": share,
+					"revenue_share_change_bps": None
+					if share is None or prior_share is None
+					else (share - prior_share) * 10_000,
+					"revenue_growth_contribution": None
+					if absolute is None
+					or consolidated is None
+					or prior_consolidated is None
+					or consolidated - prior_consolidated == 0
+					or growth is None
+					else absolute / (consolidated - prior_consolidated),
+				}
+			)
+		elif metric == "OperatingIncomeLoss":
+			revenue_row = by_key.get((member, "Revenue", period))
+			prior_revenue_row = (
+				by_key.get((member, "Revenue", periods[position + 1]))
+				if position + 1 < len(periods)
+				else None
+			)
+			revenue = (
+				_finite(revenue_row.get("numeric_value"))
+				if revenue_row is not None and _text(revenue_row.get("fact_status")) == "PASS"
+				else None
+			)
+			prior_revenue = (
+				_finite(prior_revenue_row.get("numeric_value"))
+				if prior_revenue_row is not None
+				and _text(prior_revenue_row.get("fact_status")) == "PASS"
+				else None
+			)
+			margin = None if current is None or revenue is None or revenue <= 0 else current / revenue
+			prior_margin = (
+				None
+				if previous is None or prior_revenue is None or prior_revenue <= 0
+				else previous / prior_revenue
+			)
+			consolidated = _segment_pnl_value(pnl, "OperatingIncomeLoss", period)
+			prior_consolidated = (
+				_segment_pnl_value(pnl, "OperatingIncomeLoss", periods[position + 1])
+				if position + 1 < len(periods)
+				else None
+			)
+			values.update(
+				{
+					"operating_margin": margin,
+					"operating_margin_bps_change": None
+					if margin is None or prior_margin is None
+					else (margin - prior_margin) * 10_000,
+					"operating_income_growth_contribution": None
+					if absolute is None
+					or consolidated is None
+					or prior_consolidated is None
+					or consolidated - prior_consolidated == 0
+					or growth is None
+					else absolute / (consolidated - prior_consolidated),
+				}
+			)
+		expected[(ref, period)] = values
+	return expected
+
+
+def _validate_segment_artifact(
+	pnl: pd.DataFrame,
+	segments: pd.DataFrame,
+	*,
+	expected_filing_accession: str | None = None,
+	require_persisted_refs: bool = True,
+	require_source_identity: bool = True,
+	require_derived_context: bool = True,
+) -> dict[str, list[str]]:
+	"""Validate persisted source identity and deterministic segment context."""
+	if not isinstance(segments, pd.DataFrame) or segments.empty:
+		raise FilingInvestigationError("persisted segment analytics are unavailable")
+	required_columns = set(_SEGMENT_SOURCE_COLUMNS)
+	if require_derived_context:
+		required_columns.update(_SEGMENT_DERIVED_COLUMNS)
+	if require_source_identity:
+		required_columns.update(
+			{
+				*_SEGMENT_IDENTITY_COLUMNS,
+				"reported_basis",
+				"period_end",
+				"period_start",
+				"fiscal_year",
+					"fiscal_period",
+					"fact_id",
+					"context_ref",
+					"value",
+			}
+		)
+	if not require_source_identity:
+		required_columns.difference_update({"unit", "accession", "source_url"})
+	missing = sorted(required_columns.difference(segments.columns))
+	if missing:
+		raise FilingInvestigationError(
+			"persisted segment analytics is missing columns: " + ", ".join(missing)
+		)
+	_validate_segment_source_snapshot(segments)
+	periods = _annual_periods(pnl)
+	if not periods:
+		raise FilingInvestigationError("P&L contains no annual FY periods")
+	actual_refs = segments["segment_ref"].map(_text)
+	if require_persisted_refs and not _segment_ref_persistence_status(segments):
+		raise FilingInvestigationError(
+			"segment refs were not persisted in segment analytics; refusing to regenerate them"
+		)
+	try:
+		expected = assign_segment_refs(segments)["segment_ref"].map(_text)
+	except (KeyError, TypeError, ValueError) as exc:
+		raise FilingInvestigationError(
+			f"persisted segment refs cannot be reconstructed: {exc}"
+		) from exc
+	if actual_refs.tolist() != expected.tolist():
+		raise FilingInvestigationError(
+			"persisted segment refs do not match deterministic segment assignment"
+		)
+	if require_source_identity:
+		for index, row in segments.iterrows():
+			values = [
+				_finite(row.get(field))
+				for field in ("value", "reported_value", "numeric_value")
+			]
+			if any(value is not None for value in values) and (
+				values[0] is None
+				or values[1] is None
+				or values[2] is None
+				or not (
+					math.isclose(values[0], values[1], rel_tol=1e-12, abs_tol=1e-9)
+					and math.isclose(values[1], values[2], rel_tol=1e-12, abs_tol=1e-9)
+				)
+			):
+				raise FilingInvestigationError(
+					f"segment source value drift at row {index}"
+				)
+		for period in periods:
+			period_rows = segments[segments["period"].map(_text).eq(period)]
+			period_end = period[:10]
+			period_year = period_end[:4]
+			if period_rows.empty:
+				continue
+			ends = {_text(value) for value in period_rows["period_end"]}
+			starts = {_text(value) for value in period_rows["period_start"]}
+			fiscal_years = {_text(value) for value in period_rows["fiscal_year"]}
+			fiscal_periods = {
+				_text(value).upper() for value in period_rows["fiscal_period"]
+			}
+			if (
+				ends != {period_end}
+				or len(starts) != 1
+				or "" in starts
+				or fiscal_years != {period_year}
+				or fiscal_periods != {"FY"}
+			):
+				raise FilingInvestigationError(
+					f"persisted segment period metadata drift for {period}"
+				)
+			start = next(iter(starts))
+			try:
+				expected_start = (
+					pd.Timestamp(period_end) - pd.DateOffset(years=1) + pd.Timedelta(days=1)
+				).strftime("%Y-%m-%d")
+				if start != expected_start or pd.Timestamp(start) >= pd.Timestamp(period_end):
+					raise ValueError
+			except (TypeError, ValueError) as exc:
+				raise FilingInvestigationError(
+					f"persisted segment period metadata drift for {period}"
+				) from exc
+		for ref in sorted({ref for ref in actual_refs if ref}):
+			group = segments[actual_refs.eq(ref)]
+			for field in _SEGMENT_GROUP_IDENTITY_COLUMNS:
+				values = {_text(value) for value in group[field]}
+				if len(values) != 1:
+					raise FilingInvestigationError(
+						f"segment ref {ref} has inconsistent {field} identity"
+					)
+			if any(
+				_text(group.iloc[0][field]) == ""
+				for field in (
+					"segment_axis",
+					"segment_member",
+					"segment_label",
+					"metric",
+					"unit",
+					"currency",
+					"accession",
+					"source_url",
+					"period_type",
+					"filing_date",
+					"form_type",
+					"statement_role",
+				)
+			):
+				raise FilingInvestigationError(
+					f"segment ref {ref} has incomplete source identity"
+				)
+			for field in ("concept", "standard_concept"):
+				if field in group:
+					values = {_text(value) for value in group[field]}
+					if len(values) != 1:
+						raise FilingInvestigationError(
+							f"segment ref {ref} has inconsistent {field} identity"
+						)
+		fact_ids = [_text(value) for value in segments["fact_id"]]
+		if any(not value for value in fact_ids) or len(fact_ids) != len(set(fact_ids)):
+			raise FilingInvestigationError(
+				"persisted segment fact/context identity is incomplete or duplicated"
+			)
+		contexts_by_period: dict[tuple[str, str], set[str]] = {}
+		context_keys: dict[str, tuple[str, str]] = {}
+		for _, row in segments.iterrows():
+			context_ref = _text(row.get("context_ref"))
+			key = (_text(row.get("segment_member")), _text(row.get("period")))
+			if not context_ref:
+				raise FilingInvestigationError(
+					"persisted segment fact/context identity is incomplete or duplicated"
+				)
+			previous_key = context_keys.setdefault(context_ref, key)
+			if previous_key != key:
+				raise FilingInvestigationError(
+					"persisted segment fact/context identity is incomplete or duplicated"
+				)
+			contexts_by_period.setdefault(key, set()).add(context_ref)
+		if any(len(values) != 1 for values in contexts_by_period.values()):
+			raise FilingInvestigationError(
+				"persisted segment fact/context identity is incomplete or duplicated"
+			)
+	if require_derived_context:
+		# Recalculate expected fields only for comparison; never regenerate or
+		# substitute persisted refs/context in the investigation payload.
+		expected_by_key = _segment_derived_context(pnl, segments, periods)
+		actual_by_key = {
+			(_text(row.get("segment_ref")), _text(row.get("period"))): row
+			for _, row in segments.iterrows()
+			if _text(row.get("segment_ref"))
+		}
+		if set(actual_by_key) != set(expected_by_key):
+			raise FilingInvestigationError(
+				"persisted segment deterministic context cannot be reconstructed"
+			)
+		for key, actual_row in actual_by_key.items():
+			expected_row = expected_by_key[key]
+			for field in (*_SEGMENT_DERIVED_COLUMNS, *_SEGMENT_DERIVED_ALIASES):
+				expected_field = _SEGMENT_DERIVED_ALIASES.get(field, field)
+				if field not in actual_row:
+					continue
+				expected_value = expected_row[expected_field]
+				actual_value = _finite(actual_row.get(field))
+				if expected_value is None and actual_value is None:
+					continue
+				if expected_value is None or actual_value is None or not math.isclose(
+					expected_value, actual_value, rel_tol=1e-12, abs_tol=1e-9
+				):
+					raise FilingInvestigationError(
+						"persisted segment deterministic context drift "
+						f"for {key[0]}: {field}"
+					)
+
+	rows_by_ref: dict[str, list[str]] = {}
+	for ref in sorted({ref for ref in actual_refs if ref}):
+		group = segments[actual_refs.eq(ref)]
+		if group.empty or not _BARE_SEGMENT_REF.fullmatch(ref):
+			raise FilingInvestigationError(f"invalid persisted segment ref: {ref}")
+		if not group["fact_status"].map(_text).eq("PASS").all():
+			raise FilingInvestigationError(f"segment ref is not fully PASS: {ref}")
+		period_values = group["period"].map(_text).tolist()
+		if len(period_values) != len(set(period_values)) or set(period_values) != set(periods):
+			raise FilingInvestigationError(
+				f"segment ref {ref} does not have exactly one row for each saved period"
+			)
+		identity_fields = ("segment_axis", "segment_member", "segment_label", "metric")
+		if require_source_identity:
+			identity_fields += ("unit",)
+		for field in identity_fields:
+			values = {_text(value) for value in group[field]}
+			if len(values) != 1 or "" in values:
+				raise FilingInvestigationError(
+					f"segment ref {ref} has inconsistent {field} identity"
+				)
+		metric = _text(group.iloc[0]["metric"])
+		if metric not in _SEGMENT_METRIC_LABELS:
+			raise FilingInvestigationError(f"segment ref {ref} has unsupported metric")
+		if require_source_identity:
+			accessions = {_text(value) for value in group["accession"]}
+			sources = {_text(value) for value in group["source_url"]}
+			if len(accessions) != 1 or "" in accessions:
+				raise FilingInvestigationError(f"segment ref {ref} has incomplete accession identity")
+			if len(sources) != 1 or "" in sources:
+				raise FilingInvestigationError(f"segment ref {ref} has incomplete source identity")
+			if expected_filing_accession and next(iter(accessions)) != _text(
+				expected_filing_accession
+			):
+				raise FilingInvestigationError(
+					f"segment ref {ref} accession does not match saved filing"
+				)
+		for _, row in group.iterrows():
+			if require_source_identity and not (
+				_text(row.get("fact_id")) or _text(row.get("context_ref"))
+			):
+				raise FilingInvestigationError(
+					f"segment ref {ref} has no source fact/context identity"
+				)
+			if require_source_identity and _text(row.get("reported_basis")) not in {
+				"",
+				"reported",
+			}:
+				raise FilingInvestigationError(f"segment ref {ref} is not on reported basis")
+		rows_by_ref[ref] = periods
+	return rows_by_ref
+
+
+def resolve_segment_references(
+	pnl: pd.DataFrame,
+	finding: AnalyticalScanFinding,
+	segments: pd.DataFrame | None,
+	*,
+	expected_filing_accession: str | None = None,
+) -> dict[str, dict[str, Any]]:
+	"""Resolve saved S refs to source rows; L refs retain positional semantics."""
+	if not isinstance(pnl, pd.DataFrame):
+		raise TypeError("pnl must be a pandas DataFrame")
+	if not isinstance(finding, AnalyticalScanFinding):
+		raise TypeError("finding must be an AnalyticalScanFinding")
+	refs = list(finding.affected_line_refs)
+	if len(refs) != len(set(refs)):
+		raise FilingInvestigationError("affected_line_refs must be unique")
+	periods = _annual_periods(pnl)
+	if not periods:
+		raise FilingInvestigationError("P&L contains no annual FY periods")
+	segment_refs = [ref for ref in refs if _BARE_SEGMENT_REF.fullmatch(ref)]
+	resolved: dict[str, dict[str, Any]] = {}
+	if segment_refs:
+		if segments is None:
+			raise FilingInvestigationError(
+				"S refs require persisted segment analytics"
+			)
+		all_segment_refs = _validate_segment_artifact(
+			pnl,
+			segments,
+			expected_filing_accession=expected_filing_accession,
+			require_persisted_refs=True,
+		)
+		available = set(all_segment_refs)
+		for ref in segment_refs:
+			if ref not in available:
+				raise FilingInvestigationError(
+					f"unknown or stale persisted segment ref: {ref}"
+				)
+		for ref in segment_refs:
+			group = segments[segments["segment_ref"].map(_text).eq(ref)]
+			group = group.sort_values(
+				"period",
+				key=lambda values: values.map({period: index for index, period in enumerate(periods)}),
+			)
+			first = group.iloc[0]
+			metric = _text(first.get("metric"))
+			label = _text(first.get("segment_label"))
+			period_map = {_text(row.get("period")): row for _, row in group.iterrows()}
+			derived_context: dict[str, dict[str, float | None]] = {}
+			source_identity: dict[str, dict[str, str | None]] = {}
+			values: dict[str, float | None] = {}
+			for period in periods:
+				row = period_map[period]
+				values[period] = _finite(row.get("reported_value"))
+				derived_context[period] = {
+					field: _finite(row.get(field))
+					for field in _SEGMENT_DERIVED_COLUMNS
+				}
+				source_identity[period] = {
+					field: _text(row.get(field)) or None
+					for field in _SEGMENT_IDENTITY_COLUMNS
+				}
+			year_over_year: list[dict[str, Any]] = []
+			for index, period in enumerate(periods[:-1]):
+				row = period_map[period]
+				year_over_year.append(
+					{
+						"period": period,
+						"previous_period": periods[index + 1],
+						"difference": _finite(row.get("absolute_yoy_change")),
+					}
+				)
+			resolved[ref] = {
+				"line_ref": ref,
+				"reference_type": "segment",
+				"scope": "segment",
+				"segment_name": label,
+				"segment_label": label,
+				"segment_axis": _text(first.get("segment_axis")),
+				"segment_member": _text(first.get("segment_member")),
+				"metric": metric,
+				"source_label": label,
+				"concept": _text(first.get("concept")) or None,
+				"standard_concept": _text(first.get("standard_concept")) or None,
+				"periods": values,
+				"reported_values": dict(values),
+				"year_over_year": year_over_year,
+				"derived_context": derived_context,
+				"source_identity": source_identity,
+			}
+	for ref in refs:
+		if _BARE_SEGMENT_REF.fullmatch(ref):
+			continue
+		if _BARE_LINE_REF.fullmatch(ref):
+			match = re.fullmatch(r"L(\d+)", ref)
+			position = -1 if match is None else int(match.group(1)) - 1
+			if position < 0 or position >= len(pnl):
+				raise FilingInvestigationError(
+					f"finding line reference is outside P&L: {ref}"
+				)
+			row = pnl.iloc[position]
+			resolved[ref] = {
+				"line_ref": ref,
+				"reference_type": "consolidated",
+				"scope": "consolidated",
+				"source_label": _text(row.get("label")) or _text(row.get("concept")),
+				"concept": _text(row.get("concept")) or None,
+				"standard_concept": _text(row.get("standard_concept")) or None,
+			}
+		else:
+			raise FilingInvestigationError(f"unsupported affected reference: {ref}")
+	return resolved
 
 
 class FilingGroundedQuery(BaseModel):
@@ -167,8 +784,11 @@ class FindingSearchPlan(BaseModel):
 	@classmethod
 	def _valid_refs(cls, value: list[str]) -> list[str]:
 		refs = [ref.strip() for ref in value]
-		if any(not _BARE_LINE_REF.fullmatch(ref) for ref in refs):
-			raise ValueError("affected_line_refs must contain bare L## references")
+		if any(
+			not (_BARE_LINE_REF.fullmatch(ref) or _BARE_SEGMENT_REF.fullmatch(ref))
+			for ref in refs
+		):
+			raise ValueError("affected_line_refs must contain bare L## or S## references")
 		if len(refs) != len(set(refs)):
 			raise ValueError("affected_line_refs must be unique")
 		return refs
@@ -357,6 +977,10 @@ _INITIAL_GENERIC_QUALIFIERS: tuple[tuple[str, str], ...] = (
 	("expense", "expenses"),
 	("income", "income"),
 )
+_INITIAL_SEGMENT_METRIC_QUALIFIERS = {
+	"Revenue": "revenue",
+	"OperatingIncomeLoss": "operating income",
+}
 _INITIAL_LABEL_NOUN_PATTERN = re.compile(
 	r"\b(?:revenue|costs?|expenses?|income|gains?|loss(?:es)?)\b",
 	re.IGNORECASE,
@@ -365,7 +989,7 @@ _INITIAL_LABEL_NOUN_PATTERN = re.compile(
 
 def _source_context_rows(
 	context: dict[str, Any] | list[dict[str, Any]],
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
 	"""Project supplied line context without ever copying filing passages."""
 	if isinstance(context, list):
 		context_map: dict[str, Any] = {}
@@ -386,7 +1010,7 @@ def _source_context_rows(
 		# A direct single-row context is useful for narrow callers and remains
 		# closed because only its source-label fields are copied.
 		raw_rows = [context_map] if context_map.get("source_label") else []
-	rows: list[dict[str, str]] = []
+	rows: list[dict[str, Any]] = []
 	for raw in raw_rows:
 		if not isinstance(raw, dict):
 			continue
@@ -394,15 +1018,30 @@ def _source_context_rows(
 		label = _text(raw.get("source_label") or raw.get("label"))
 		if not label:
 			continue
-		rows.append(
-			{
-				"line_ref": line_ref,
-				"source_label": label,
-				"concept": _text(raw.get("concept")),
-				"standard_concept": _text(raw.get("standard_concept")),
-				"path": _text(raw.get("path") or raw.get("parent_path")),
-			}
-		)
+		row: dict[str, Any] = {
+			"line_ref": line_ref,
+			"source_label": label,
+			"concept": _text(raw.get("concept")),
+			"standard_concept": _text(raw.get("standard_concept")),
+			"path": _text(raw.get("path") or raw.get("parent_path")),
+		}
+		for field in (
+			"reference_type",
+			"scope",
+			"segment_name",
+			"segment_label",
+			"segment_axis",
+			"segment_member",
+			"metric",
+			"periods",
+			"reported_values",
+			"year_over_year",
+			"derived_context",
+			"source_identity",
+		):
+			if field in raw:
+				row[field] = raw[field]
+		rows.append(row)
 	return rows
 
 
@@ -412,7 +1051,7 @@ def _context_has_segment_refs(context: str) -> bool:
 
 def _affected_source_context(
 	context: dict[str, Any], finding: AnalyticalScanFinding
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
 	"""Return only source-label records attached to saved affected refs."""
 	rows = _source_context_rows(context)
 	refs = list(finding.affected_line_refs)
@@ -462,8 +1101,11 @@ def _initial_generic_qualifier(row: dict[str, str], label: str) -> str | None:
 	"""Return one unambiguous generic noun from supplied concept metadata."""
 	if _INITIAL_LABEL_NOUN_PATTERN.search(label):
 		return None
+	metric = _text(row.get("metric"))
+	if metric in _INITIAL_SEGMENT_METRIC_QUALIFIERS:
+		return _INITIAL_SEGMENT_METRIC_QUALIFIERS[metric]
 	metadata = " ".join(
-		_text(row.get(field)) for field in ("concept", "standard_concept")
+		_text(row.get(field)) for field in ("concept", "standard_concept", "metric")
 	).casefold()
 	matches = [
 		qualifier
@@ -471,6 +1113,20 @@ def _initial_generic_qualifier(row: dict[str, str], label: str) -> str | None:
 		if token in metadata
 	]
 	return matches[0] if len(set(matches)) == 1 else None
+
+
+def _latest_movement_direction(row: dict[str, Any]) -> str | None:
+	"""Return the first saved non-zero movement direction, when available."""
+	movements = row.get("year_over_year")
+	if not isinstance(movements, list):
+		return None
+	for movement in movements:
+		if not isinstance(movement, dict):
+			continue
+		difference = _finite(movement.get("difference"))
+		if difference is not None and difference != 0:
+			return "increased" if difference > 0 else "decreased"
+	return None
 
 
 def _initial_query_record(
@@ -494,13 +1150,29 @@ def build_initial_search_plan(
 	"""Build bounded literal seeds from the saved finding and source labels."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
-	_reject_segment_refs(finding)
 	rows = _affected_source_context(affected_source_context, finding)
+	if len(rows) != len(finding.affected_line_refs):
+		missing = [
+			ref
+			for ref in finding.affected_line_refs
+			if not any(row.get("line_ref") == ref for row in rows)
+		]
+		raise FilingInvestigationError(
+			"initial retrieval context is missing affected refs: " + ", ".join(missing)
+		)
 
-	# Keep the supplied affected-reference order stable; no filing knowledge is
-	# used to rank or replace a source label. All candidate phrases are bounded
-	# by the five fixed generic movement cues plus one static fallback per row.
-	ordered_rows = rows
+	# Keep the supplied order within a namespace. When a finding contains S refs,
+	# give the segment rows the bounded query budget so their persisted metrics are
+	# investigable; no filing knowledge is used to rank or replace a label.
+	has_segments = any(row.get("line_ref", "").startswith("S") for row in rows)
+	ordered_rows = sorted(
+		enumerate(rows),
+		key=lambda item: (
+			0 if has_segments and item[1].get("line_ref", "").startswith("S") else 1,
+			item[0],
+		),
+	)
+	ordered_rows = [row for _, row in ordered_rows]
 	derivations: list[dict[str, Any]] = []
 	seen: set[str] = set()
 	for row in ordered_rows:
@@ -511,10 +1183,42 @@ def build_initial_search_plan(
 		qualifier = _initial_generic_qualifier(row, label)
 		if qualifier:
 			subject = f"{label} {qualifier}"
-		for cue, phrase in _INITIAL_MOVEMENT_CUES:
-			query = f"{subject} {phrase}"
+		direction = _latest_movement_direction(row)
+		movement_cues = _INITIAL_MOVEMENT_CUES
+		if direction is not None:
+			movement_cues = tuple(
+				(cue, phrase)
+				for cue, phrase in _INITIAL_MOVEMENT_CUES
+				if cue == direction
+			)
+		candidates = [(f"{subject} {phrase}", cue) for cue, phrase in movement_cues]
+		if _text(row.get("metric")) == "OperatingIncomeLoss":
+			candidates.extend(
+				(
+					f"Operating income {phrase}",
+					cue,
+				)
+				for cue, phrase in movement_cues
+			)
+		if direction is not None and row.get("reference_type") == "segment":
+			metric_label = _INITIAL_SEGMENT_METRIC_QUALIFIERS.get(
+				_text(row.get("metric"))
+			)
+			if metric_label:
+				generic_label = (
+					"Revenue" if metric_label == "revenue" else "Operating income"
+				)
+				candidates.append((f"{generic_label} {direction}", direction))
+		candidates.append(_initial_query_for_label(label))
+		for query, cue in candidates:
 			if len(query) > MAX_QUERY_LENGTH:
 				continue
+			query_label = (
+				"Operating income"
+				if _text(row.get("metric")) == "OperatingIncomeLoss"
+				and query.casefold().startswith("operating income ")
+				else label
+			)
 			key = query.casefold()
 			if key in seen:
 				for derivation in derivations:
@@ -525,21 +1229,8 @@ def build_initial_search_plan(
 				continue
 			seen.add(key)
 			derivations.append(
-				_initial_query_record(query, row["line_ref"], label, cue)
+				_initial_query_record(query, row["line_ref"], query_label, cue)
 			)
-		query, cue = _initial_query_for_label(label)
-		if len(query) > MAX_QUERY_LENGTH:
-			continue
-		key = query.casefold()
-		if key in seen:
-			for derivation in derivations:
-				if derivation["query"].casefold() == key:
-					if row["line_ref"] not in derivation["line_refs"]:
-						derivation["line_refs"].append(row["line_ref"])
-					break
-			continue
-		seen.add(key)
-		derivations.append(_initial_query_record(query, row["line_ref"], label, cue))
 	plan = FindingSearchPlan(
 		finding_rank=finding.rank,
 		affected_line_refs=list(finding.affected_line_refs),
@@ -553,31 +1244,59 @@ def build_finding_plan_context(
 	pnl: pd.DataFrame,
 	filing: Any,
 	finding: AnalyticalScanFinding,
+	segments: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
 	"""Build source-label context; filing text is intentionally excluded."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
-	_reject_segment_refs(finding)
-	rows: list[dict[str, str]] = []
+	resolved = resolve_segment_references(
+		pnl,
+		finding,
+		segments,
+		expected_filing_accession=_filing_identity(filing).get("filing_accession"),
+	)
+	rows: list[dict[str, Any]] = []
 	for ref in finding.affected_line_refs:
+		resolved_row = resolved[ref]
+		if resolved_row["reference_type"] == "segment":
+			rows.append(resolved_row)
+			continue
 		match = re.fullmatch(r"L(\d+)", ref)
 		position = -1 if match is None else int(match.group(1)) - 1
-		if 0 <= position < len(pnl):
-			row = pnl.iloc[position]
-			rows.append(
+		row = pnl.iloc[position]
+		values = {period: _finite(row.get(period)) for period in _annual_periods(pnl)}
+		deltas = []
+		for index, period in enumerate(_annual_periods(pnl)[:-1]):
+			previous_period = _annual_periods(pnl)[index + 1]
+			current, previous = values[period], values[previous_period]
+			deltas.append(
 				{
-					"line_ref": ref,
-					"source_label": _text(row.get("label"))
-					or _text(row.get("concept")),
-					"concept": _text(row.get("concept")),
-					"standard_concept": _text(row.get("standard_concept")),
+					"period": period,
+					"previous_period": previous_period,
+					"difference": None
+					if current is None or previous is None
+					else current - previous,
 				}
 			)
+		rows.append(
+			{
+				**resolved_row,
+				"source_label": _text(row.get("label")) or _text(row.get("concept")),
+				"concept": _text(row.get("concept")),
+				"standard_concept": _text(row.get("standard_concept")),
+				"periods": values,
+				"reported_values": dict(values),
+				"year_over_year": deltas,
+			}
+		)
 	return {
 		"filing_identity": _filing_identity(filing),
-		"context_method": "persisted finding plus affected source-label context",
+		"context_method": "persisted finding plus affected source-label and segment context",
 		"source_line_count": len(pnl),
 		"lines": rows,
+		"segment_reference_count": sum(
+			row["reference_type"] == "segment" for row in rows
+		),
 	}
 
 
@@ -836,22 +1555,23 @@ def run_filing_query_expansion(
 def build_observed_movement(
 	pnl: pd.DataFrame,
 	finding: AnalyticalScanFinding,
+	segments: pd.DataFrame | None = None,
 ) -> list[dict[str, Any]]:
-	"""Copy finding rows and calculate only source-value year-over-year differences."""
+	"""Copy consolidated or persisted segment movement without causal inference."""
 	if not isinstance(pnl, pd.DataFrame):
 		raise TypeError("pnl must be a pandas DataFrame")
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
-	_reject_segment_refs(finding)
-	periods = [
-		column
-		for column in pnl.columns
-		if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
-	]
+	periods = _annual_periods(pnl)
 	if not periods:
 		raise FilingInvestigationError("P&L contains no annual FY periods")
+	resolved = resolve_segment_references(pnl, finding, segments)
 	rows: list[dict[str, Any]] = []
 	for ref in finding.affected_line_refs:
+		resolved_row = resolved[ref]
+		if resolved_row["reference_type"] == "segment":
+			rows.append(resolved_row)
+			continue
 		match = re.fullmatch(r"L(\d+)", ref)
 		position = -1 if match is None else int(match.group(1)) - 1
 		if position < 0 or position >= len(pnl):
@@ -881,6 +1601,8 @@ def build_observed_movement(
 				"source_label": _text(row.get("label")) or _text(row.get("concept")),
 				"concept": _text(row.get("concept")) or None,
 				"standard_concept": _text(row.get("standard_concept")) or None,
+				"reference_type": "consolidated",
+				"scope": "consolidated",
 				"periods": values,
 				"year_over_year": deltas,
 			}
@@ -1124,7 +1846,7 @@ _NEGATIVE_SEMANTIC_PATTERN = re.compile(
 )
 _NARRATIVE_TOKEN_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)?")
 _NARRATIVE_GENERIC_WORDS_TEXT = """
-	a about above after again against all also am an and amount analysis analyst are as assessment associated attributes away be been being below but by complete
+	a about above across after again against all also am an and amount analysis analyst are as assessment associated attributes away be been being below but by complete
 	additional after available based before because between both bridge cited claim claims company composition component components conditions contains contribution contributor could
 	cause caused causes causing causal disclosed disclose discloses disclosure directly drive driver drivers driven drove described describes description did does do due each either evidence exact excerpt excerpts
 	explanation filing fiscal for from generated had has have her here him his identify identified identifies identifying if in include included
@@ -1136,15 +1858,32 @@ _NARRATIVE_GENERIC_WORDS_TEXT = """
 """
 _NARRATIVE_GENERIC_WORDS = frozenset(_NARRATIVE_GENERIC_WORDS_TEXT.split())
 _NARRATIVE_CAUSAL_PATTERN = re.compile(
-	r"\b(?:cause[ds]?|causing|drive[sn]?|driven|drove|due\s+to|"
-	r"attribut(?:e[ds]?|able\s+to)|result(?:s|ed)?\s+from|"
+	r"\b(?:because(?:\s+of)?|cause[ds]?|causing|driv(?:e|es|en|ing)|drove|"
+	r"due\s+to|linked\s+to|tie(?:s|d)?(?:\s+[^.!?;:\n]{1,80}?)?\s+to|"
+	r"attribut(?:e[ds]?|able\s+to)|result(?:s|ed|ing)?\s+(?:from|in)|"
 	r"stem(?:s|med|ming)?\s+from|explain(?:s|ed|ing)?|"
-	r"associated\s+with|related\s+to)\b",
+	r"associated\s+with|related\s+to|lead(?:s|ing)?\s+to|"
+	r"led\s+to|"
+	r"contribut(?:e[ds]?|ing)?\s+to|reflect(?:s|ed|ing)?|"
+	r"owing\s+to|on\s+account\s+of|as\s+a\s+result\s+of|"
+	r"responsible\s+for|accounted\s+for)\b",
 	re.IGNORECASE,
 )
-_NARRATIVE_NAMED_ENTITY_TOKEN_PATTERN = re.compile(
-	r"\b(?:[A-Z][A-Za-z]+(?:['’]s)?|[A-Z]{2,})\b"
+_NARRATIVE_EXACT_CAUSAL_PATTERN = re.compile(
+	r"\b(?:because(?:\s+of)?|cause(?:[ds])?(?:\s+(?:by|of))?|"
+	r"causing|driv(?:e|es|en|ing)(?:\s+(?:by|from|to))?|drove(?:\s+(?:by|from|to))?|"
+	r"due\s+to|linked\s+to|tie(?:s|d)?(?:\s+[^.!?;:\n]{1,80}?)?\s+to|"
+	r"attribut(?:e|ed|es|able)\s+to|result(?:s|ed|ing)?\s+(?:from|in)|"
+	r"stem(?:s|med|ming)?\s+from|explain(?:s|ed|ing)?|associated\s+with|related\s+to|"
+	r"lead(?:s|ing)?\s+to|led\s+to|contribut(?:e[ds]?|ing)?\s+to|"
+	r"reflect(?:s|ed|ing)?|owing\s+to|on\s+account\s+of|"
+	r"as\s+a\s+result\s+of|responsible\s+for|accounted\s+for)\b",
+	re.IGNORECASE,
 )
+# Narrative content words are evidence-dependent regardless of orthography.
+# The previous title-case-only pattern let lowercase issuer/product terms pass.
+_NARRATIVE_MEANINGFUL_TOKEN_PATTERN = _NARRATIVE_TOKEN_PATTERN
+_NARRATIVE_CLAUSE_BOUNDARY_PATTERN = re.compile(r"[.!?;:,\n]")
 
 
 def _amount_unit_family(unit: str) -> str:
@@ -1509,8 +2248,9 @@ def _parse_two_period_pair(
 def _target_projection(
 	pnl: pd.DataFrame,
 	finding: AnalyticalScanFinding,
+	segments: pd.DataFrame | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-	rows = build_observed_movement(pnl, finding)
+	rows = build_observed_movement(pnl, finding, segments)
 	labels = [row["source_label"] for row in rows if row["source_label"]]
 	if len(labels) != len({label.casefold() for label in labels}):
 		return [], ["affected source labels are not unique"]
@@ -1523,11 +2263,12 @@ def extract_period_paired_disclosures(
 	evidence_packet: str,
 	*,
 	observed_unit: AmountUnit = "unknown",
+	segments: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
 	"""Extract one exact signed two-period disclosure group from packet text."""
 	try:
 		packet = _validated_packet(evidence_packet)
-		rows, mapping_errors = _target_projection(pnl, finding)
+		rows, mapping_errors = _target_projection(pnl, finding, segments)
 	except (
 		FilingEvidenceError,
 		FilingInvestigationError,
@@ -1606,8 +2347,17 @@ def extract_period_paired_disclosures(
 		for line_ref, row in row_by_ref.items():
 			if not row["source_label"]:
 				continue
-			parsed = _parse_two_period_pair(item["excerpt"], row["source_label"])
-			if parsed is not None:
+			labels = [row["source_label"]]
+			if row.get("reference_type") == "segment":
+				metric_label = _SEGMENT_METRIC_LABELS.get(row.get("metric"))
+				if metric_label:
+					labels.insert(0, f"{row['source_label']} {metric_label}")
+			parsed_matches = [
+				_parse_two_period_pair(item["excerpt"], label) for label in labels
+			]
+			parsed_matches = [parsed for parsed in parsed_matches if parsed is not None]
+			if parsed_matches:
+				parsed = parsed_matches[0]
 				matches.append({"line_ref": line_ref, "row": row, **parsed})
 		if len(matches) > 1:
 			return {
@@ -1731,6 +2481,34 @@ def _literal_token_supported(token: str, excerpt: str) -> bool:
 	)
 
 
+def _literal_span_supported(span: str, excerpt: str) -> bool:
+	"""Match an evidence span contiguously while tolerating case/whitespace."""
+	normalized_span = " ".join(span.split()).casefold()
+	normalized_excerpt = " ".join(excerpt.split()).casefold()
+	return bool(normalized_span) and normalized_span in normalized_excerpt
+
+
+def _causal_support_span(text: str, match: re.Match[str]) -> str | None:
+	"""Return the local clause that must be copied for a causal statement.
+
+	The last meaningful token before the causal wording is included.  This keeps
+	a claim such as ``Revenue was driven by`` distinct from a source clause that
+	says ``Revenue increased driven by`` while allowing a neutral framing prefix
+	before the copied source clause.
+	"""
+	previous_tokens = list(_NARRATIVE_TOKEN_PATTERN.finditer(text[: match.start()]))
+	meaningful_tokens = [
+		token
+		for token in previous_tokens
+		if token.group().casefold() not in _NARRATIVE_GENERIC_WORDS
+	]
+	start = meaningful_tokens[-1].start() if meaningful_tokens else match.start()
+	boundary = _NARRATIVE_CLAUSE_BOUNDARY_PATTERN.search(text, match.end())
+	end = boundary.start() if boundary is not None else len(text)
+	span = text[start:end].strip(" ,")
+	return span or None
+
+
 def _validate_free_text_claims(
 	text: str,
 	evidence_refs: Sequence[str],
@@ -1744,28 +2522,36 @@ def _validate_free_text_claims(
 		raise FilingEvidenceError(f"{label} must be numeric-free")
 	cited_text = [packet["items"][ref]["excerpt"] for ref in evidence_refs]
 	tokens = _NARRATIVE_TOKEN_PATTERN.findall(text)
-	for match in _NARRATIVE_NAMED_ENTITY_TOKEN_PATTERN.finditer(text):
-		token = match.group()
-		if token.casefold() in _NARRATIVE_GENERIC_WORDS:
-			continue
-		prefix = text[: match.start()].rstrip()
-		if token != token.upper() and (not prefix or prefix[-1] in ".!?"):
-			continue
-		if not any(_literal_token_supported(token, excerpt) for excerpt in cited_text):
-			raise FilingEvidenceError(
-				f"{label} contains unsupported named entity: {token}"
-			)
-	if _NARRATIVE_CAUSAL_PATTERN.search(text):
+	causal_matches = list(_NARRATIVE_CAUSAL_PATTERN.finditer(text))
+	if causal_matches:
+		for match in causal_matches:
+			span = _causal_support_span(text, match)
+			if span is None or not all(
+				_literal_span_supported(span, excerpt) for excerpt in cited_text
+			):
+				raise FilingEvidenceError(
+					f"{label} contains unsupported causal claim: clause is not verbatim"
+				)
 		concrete_terms = [
 			token
 			for token in tokens
 			if token.casefold() not in _NARRATIVE_GENERIC_WORDS
 		]
 		if concrete_terms and not all(
-			any(_literal_token_supported(token, excerpt) for excerpt in cited_text)
-			for token in concrete_terms
+			all(_literal_token_supported(token, excerpt) for excerpt in cited_text)
+				for token in concrete_terms
 		):
 			raise FilingEvidenceError(f"{label} contains unsupported causal claim")
+	else:
+		for token in dict.fromkeys(
+			token
+			for token in _NARRATIVE_MEANINGFUL_TOKEN_PATTERN.findall(text)
+			if token.casefold() not in _NARRATIVE_GENERIC_WORDS
+		):
+			if not all(_literal_token_supported(token, excerpt) for excerpt in cited_text):
+				raise FilingEvidenceError(
+					f"{label} contains unsupported named entity: {token}"
+				)
 	amount_mentions = _amount_mentions(text)
 	numeric_tokens = _PROSE_NUMBER_PATTERN.findall(text)
 	spelled_amounts = list(_SPELLED_AMOUNT_PATTERN.finditer(text))
@@ -1873,6 +2659,7 @@ def reconcile_period_pair_bridge(
 	evidence_packet: str,
 	*,
 	observed_unit: AmountUnit = "unknown",
+	segments: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
 	"""Reconcile one exact current/prior disclosure pair in Python only."""
 	unit = _unit(observed_unit)
@@ -1881,11 +2668,13 @@ def reconcile_period_pair_bridge(
 		finding,
 		evidence_packet,
 		observed_unit=unit,
+		segments=segments,
 	)
 	base: dict[str, Any] = {
 		"status": "not_computable",
 		"target_line_ref": None,
 		"target_source_label": None,
+		"target_scope": None,
 		"period": None,
 		"previous_period": None,
 		"observed_amount": None,
@@ -1911,7 +2700,10 @@ def reconcile_period_pair_bridge(
 			}
 		)
 		return base
-	rows = {row["line_ref"]: row for row in build_observed_movement(pnl, finding)}
+	rows = {
+		row["line_ref"]: row
+		for row in build_observed_movement(pnl, finding, segments)
+	}
 	line_ref = facts[0]["target_line_ref"]
 	row = rows.get(line_ref)
 	if row is None:
@@ -1922,11 +2714,7 @@ def reconcile_period_pair_bridge(
 			}
 		)
 		return base
-	periods = [
-		column
-		for column in pnl.columns
-		if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
-	]
+	periods = _annual_periods(pnl)
 	if len(periods) < 2 or [facts[0]["period"], facts[1]["period"]] != periods[:2]:
 		base.update(
 			{
@@ -1961,6 +2749,7 @@ def reconcile_period_pair_bridge(
 			"status": "partial",
 			"target_line_ref": line_ref,
 			"target_source_label": row["source_label"],
+			"target_scope": row.get("scope", "consolidated"),
 			"period": periods[0],
 			"previous_period": periods[1],
 			"observed_current_amount": current,
@@ -1984,6 +2773,7 @@ def run_financial_investigation(
 	evidence_packet: str,
 	*,
 	expected_filing_accession: str,
+	segments: pd.DataFrame | None = None,
 	client: Any | None = None,
 	model: str = DEFAULT_MODEL,
 	reasoning_effort: str = DEFAULT_REASONING_EFFORT,
@@ -1994,7 +2784,6 @@ def run_financial_investigation(
 		pnl, pd.DataFrame
 	):
 		raise TypeError("finding and pnl have invalid types")
-	_reject_segment_refs(finding)
 	if not _text(expected_filing_accession):
 		raise FilingInvestigationError(
 			"expected filing accession is required at the investigation boundary"
@@ -2007,10 +2796,17 @@ def run_financial_investigation(
 		)
 	except FilingEvidenceError as exc:
 		raise FilingInvestigationError(str(exc)) from exc
+	resolved = resolve_segment_references(
+		pnl,
+		finding,
+		segments,
+		expected_filing_accession=expected_filing_accession,
+	)
 	payload = {
 		"ticker": ticker.strip().upper(),
 		"finding": finding.model_dump(mode="json"),
-		"observed_movement": build_observed_movement(pnl, finding),
+		"reference_resolution": resolved,
+		"observed_movement": build_observed_movement(pnl, finding, segments),
 		"evidence_packet": evidence_packet,
 	}
 	allowed_periods = {
@@ -2105,6 +2901,13 @@ def _select_initial_queries(
 	line_order = {
 		line_ref: index for index, line_ref in enumerate(plan.affected_line_refs)
 	}
+	if any(ref.startswith("S") for ref in plan.affected_line_refs):
+		prioritized_refs = [
+			ref for ref in plan.affected_line_refs if ref.startswith("S")
+		] + [
+			ref for ref in plan.affected_line_refs if not ref.startswith("S")
+		]
+		line_order = {line_ref: index for index, line_ref in enumerate(prioritized_refs)}
 	cue_order = {
 		cue: index for index, (cue, _) in enumerate(_INITIAL_MOVEMENT_CUES)
 	}
@@ -2113,12 +2916,12 @@ def _select_initial_queries(
 		cue = _text(derivation.get("generic_cue")).casefold()
 		is_movement = cue in cue_order
 		tier = 0 if is_movement else 1
-		movement_order = cue_order.get(cue, len(cue_order))
 		ref_order = min(
 			(line_order.get(ref, len(line_order)) for ref in derivation.get("line_refs", [])),
 			default=len(line_order),
 		)
-		return tier, movement_order, ref_order, index
+		movement_order = cue_order.get(cue, len(cue_order))
+		return tier, ref_order, movement_order, index
 
 	accepted: list[str] = []
 	accepted_derivations: list[dict[str, Any]] = []
@@ -2236,15 +3039,35 @@ def investigate_finding(
 	"""Run one plan -> retrieve -> investigate flow and persist its status."""
 	if not isinstance(finding, AnalyticalScanFinding):
 		raise TypeError("finding must be an AnalyticalScanFinding")
-	_reject_segment_refs(finding)
 	ticker = ticker.strip().upper()
 	run_id = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+	expected = (scan_metadata or {}).get("filing_accession")
+	actual = _filing_identity(filing).get("filing_accession")
+	if expected and actual != str(expected).strip():
+		raise FilingInvestigationError(
+			"filing accession does not match saved Analytical Scan"
+		)
+	resolved = resolve_segment_references(
+		pnl,
+		finding,
+		segments,
+		expected_filing_accession=actual,
+	)
 	if scan_context is not None:
 		context_segments = segments if _context_has_segment_refs(scan_context) else None
 		if _context_has_segment_refs(scan_context) and context_segments is None:
 			raise FilingInvestigationError(
 				"saved scan context contains segment refs but persisted segment "
 				"analytics were not supplied"
+			)
+		if _context_has_segment_refs(scan_context):
+			_validate_segment_artifact(
+				pnl,
+				context_segments,
+				expected_filing_accession=actual,
+				require_persisted_refs=False,
+				require_source_identity=False,
+				require_derived_context=False,
 			)
 		try:
 			context_matches = (
@@ -2258,14 +3081,12 @@ def investigate_finding(
 			raise FilingInvestigationError(
 				"saved scan context does not match current P&L"
 			)
-	expected = (scan_metadata or {}).get("filing_accession")
-	actual = _filing_identity(filing).get("filing_accession")
-	if expected and actual != str(expected).strip():
-		raise FilingInvestigationError(
-			"filing accession does not match saved Analytical Scan"
+	if filing_context is None or any(
+		ref.startswith("S") for ref in finding.affected_line_refs
+	):
+		plan_context = build_finding_plan_context(
+			pnl, filing, finding, segments=segments
 		)
-	if filing_context is None:
-		plan_context = build_finding_plan_context(pnl, filing, finding)
 	else:
 		plan_context = {
 			"filing_identity": filing_context.get("filing_identity", {})
@@ -2295,11 +3116,13 @@ def investigate_finding(
 		},
 		"finding": finding.model_dump(mode="json"),
 		"scan_context": scan_context,
+		"reference_resolution": resolved,
 		"plan_context": {
 			"filing_identity": plan_context.get("filing_identity", {}),
 			"context_method": plan_context.get("context_method"),
 			"source_line_count": plan_context.get("source_line_count"),
 			"line_count": len(plan_context.get("lines", [])),
+			"segment_reference_count": plan_context.get("segment_reference_count", 0),
 		},
 		"status": "started",
 		"plan": None,
@@ -2314,7 +3137,9 @@ def investigate_finding(
 		"reconciliation": None,
 	}
 	try:
-		payload["observed_movement"] = build_observed_movement(pnl, finding)
+		payload["observed_movement"] = build_observed_movement(
+			pnl, finding, segments
+		)
 		plan, plan_metadata = run_search_plan(
 			ticker,
 			finding,
@@ -2488,6 +3313,7 @@ def investigate_finding(
 			pnl,
 			final_packet,
 			expected_filing_accession=_filing_identity(filing).get("filing_accession"),
+			segments=segments,
 			client=client,
 			model=model,
 			reasoning_effort=reasoning_effort,
@@ -2509,6 +3335,7 @@ def investigate_finding(
 			finding,
 			final_packet,
 			observed_unit=observed_unit,
+			segments=segments,
 		)
 		payload["reconciliation"] = _movement_reconciliation(
 			pnl,
@@ -2516,6 +3343,7 @@ def investigate_finding(
 			result,
 			final_packet,
 			observed_unit=observed_unit,
+			segments=segments,
 		)
 		payload["status"] = "completed"
 	except (
@@ -2546,6 +3374,7 @@ def _movement_reconciliation(
 	evidence_packet: str | None = None,
 	*,
 	observed_unit: AmountUnit = "dollars",
+	segments: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
 	if evidence_packet is not None:
 		return reconcile_period_pair_bridge(
@@ -2553,8 +3382,9 @@ def _movement_reconciliation(
 			finding,
 			evidence_packet,
 			observed_unit=observed_unit,
+			segments=segments,
 		)
-	observed_rows = build_observed_movement(pnl, finding)
+	observed_rows = build_observed_movement(pnl, finding, segments)
 	if len(observed_rows) != 1:
 		return reconcile_disclosed_amounts(None, result.disclosed_drivers)
 	movement = observed_rows[0]["year_over_year"]
@@ -2671,6 +3501,15 @@ def load_saved_scan(
 	if not _text(metadata.get("filing_accession")):
 		raise FilingInvestigationError(
 			"saved scan metadata is missing filing_accession"
+		)
+	if context_has_segments and pnl is not None:
+		_validate_segment_artifact(
+			pnl,
+			segments,
+			expected_filing_accession=metadata.get("filing_accession"),
+			require_persisted_refs=False,
+			require_source_identity=False,
+			require_derived_context=False,
 		)
 	if pnl is not None:
 		try:

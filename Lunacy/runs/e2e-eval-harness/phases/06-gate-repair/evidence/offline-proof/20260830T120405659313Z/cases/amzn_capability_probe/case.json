@@ -1,0 +1,90 @@
+{
+  "case_id": "amzn_capability_probe",
+  "ticker": "AMZN",
+  "suites": [
+    "development"
+  ],
+  "workflow": "filing",
+  "rubric": {
+    "dimensions": [
+      "capability"
+    ],
+    "acceptance": "Preserve unavailable input capability as BLOCKED without fabricating a case."
+  },
+  "case_status": "BLOCKED",
+  "capability": "UNAVAILABLE",
+  "case_blocked_reason": "No frozen AMZN accession, source, scan, or finding is available.",
+  "product_status": "NOT_RUN",
+  "product_valid": null,
+  "judge_status": "NOT_RUN",
+  "qualitative_verdict": null,
+  "checks": [],
+  "declared_checks": [],
+  "normalized_result": null,
+  "artifacts": [
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof\\20260830T120405659313Z\\cases\\amzn_capability_probe\\stdout.txt",
+      "kind": "stdout",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof\\20260830T120405659313Z\\cases\\amzn_capability_probe\\stderr.txt",
+      "kind": "stderr",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    }
+  ],
+  "calls": {
+    "product": 0,
+    "judge": 0,
+    "retries": 0
+  },
+  "execution": {
+    "product_model": "gpt-5.6-luna",
+    "product_reasoning_effort": "high",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "high"
+  },
+  "frozen_inputs": {
+    "source_artifact": null,
+    "source_manifest_artifact": null,
+    "scan_artifact": null,
+    "investigation_artifact": null,
+    "evidence_artifact": null,
+    "analytical_pnl_artifact": null,
+    "reconciliation_artifact": null,
+    "segment_analytics_artifact": null,
+    "segment_reconciliation_artifact": null,
+    "accession": null,
+    "filing_period": null,
+    "finding_rank": null,
+    "finding_refs": []
+  },
+  "case_dir": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof\\20260830T120405659313Z\\cases\\amzn_capability_probe",
+  "definition": {
+    "case_hash": "b917a32d107053d858a7f0f083deff97e32c35f776eeea01f94318cb2c894288",
+    "rubric_hash": "3cb5c6979daebdf0b7acdc27991a0a512f1de1a9fce0397184c3d1d58c49cabc",
+    "check_hash": "3be0dda359047f3347185939e95960450b84ec3e158eb321152f088893604773",
+    "source_hashes": {
+      "source": null,
+      "source_manifest": null,
+      "scan": null,
+      "investigation": null,
+      "evidence": null,
+      "analytical_pnl": null,
+      "reconciliation": null,
+      "segment_analytics": null,
+      "segment_reconciliation": null
+    }
+  },
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "AC9F48632B147F32584E8DF93DA2AFE9279275B5EE627781150618FB022E23D0",
+    "relevant_untracked_count": 183,
+    "error": null
+  }
+}

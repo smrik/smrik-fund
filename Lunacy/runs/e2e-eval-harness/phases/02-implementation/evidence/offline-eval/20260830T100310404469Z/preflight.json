@@ -1,0 +1,121 @@
+{
+  "status": "HARNESS READY",
+  "timestamp_utc": "2026-08-30T10:03:10.405940+00:00",
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "B55DFF549537B5AAAA0A9E6292E27202964667BC8BDB3EEF2AC8AE9111FE1D18",
+    "relevant_untracked_count": 175,
+    "error": null
+  },
+  "selected_case_count": 4,
+  "live_smoke": false,
+  "cases": {
+    "msft_segment_growth_mix": {
+      "case_status": "READY",
+      "capability": "AVAILABLE",
+      "ready": true,
+      "reason": null,
+      "checks": [
+        {
+          "id": "source_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+          "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+        },
+        {
+          "id": "scan_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\analytical_scan_20260828T191302094324Z.json",
+          "sha256": "68D884344368357E006CBF0ADDB538BBD9C8A43931F3305263B0D0B585914C77"
+        },
+        {
+          "id": "investigation_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\segment-aware-investigation\\phases\\02-implementation\\evidence\\live-rank2\\MSFT\\03_output\\analysis\\filing_investigation_02_rank2-live-mini-v6.json",
+          "sha256": "FA95829BB593D9B4252BC9A8AFBA041AF4F268CCC2B9E7C8F08899CEE7CC46EF"
+        }
+      ]
+    },
+    "msft_segment_profitability_margin": {
+      "case_status": "READY",
+      "capability": "AVAILABLE",
+      "ready": true,
+      "reason": null,
+      "checks": [
+        {
+          "id": "source_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+          "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+        },
+        {
+          "id": "scan_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\analytical_scan_20260828T191302094324Z.json",
+          "sha256": "68D884344368357E006CBF0ADDB538BBD9C8A43931F3305263B0D0B585914C77"
+        },
+        {
+          "id": "investigation_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-segment-enrichment-i1\\MSFT\\03_output\\analysis\\filing_investigation_04_20260830T082208881748Z.json",
+          "sha256": "FA24555F061BEC84B548ED9C606F7B5F97ED3BCF9639F83837ADD9E4B453278C"
+        }
+      ]
+    },
+    "msft_openai_nonoperating_quantified": {
+      "case_status": "READY",
+      "capability": "AVAILABLE",
+      "ready": true,
+      "reason": null,
+      "checks": [
+        {
+          "id": "source_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+          "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+        },
+        {
+          "id": "scan_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r1\\MSFT\\03_output\\analysis\\analytical_scan_20260827T175543203180Z.json",
+          "sha256": "D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4"
+        },
+        {
+          "id": "investigation_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json",
+          "sha256": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF"
+        }
+      ]
+    },
+    "msft_operating_expense_multi_driver": {
+      "case_status": "READY",
+      "capability": "AVAILABLE",
+      "ready": true,
+      "reason": null,
+      "checks": [
+        {
+          "id": "source_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+          "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+        },
+        {
+          "id": "scan_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r2\\MSFT\\03_output\\analysis\\analytical_scan_20260827T190654525200Z.json",
+          "sha256": "666CFFAE478CEAD9D3FF6C17E6E32CFD5EA999B9388C4B515DD07544B2832F40"
+        },
+        {
+          "id": "investigation_artifact",
+          "status": "PASS",
+          "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-r1\\MSFT\\03_output\\analysis\\filing_investigation_03_20260828T144057144100Z.json",
+          "sha256": "3B1C8B7C4F458D4F4454359022BFCD3C84BBC7F83BEE6F8879A77C1DDF898FFB"
+        }
+      ]
+    }
+  }
+}

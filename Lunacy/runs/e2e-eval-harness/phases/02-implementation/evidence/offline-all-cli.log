@@ -1,0 +1,10 @@
+HARNESS READY: 20260830T101752494309Z
+Definition: 5844b78b5082dd990c9a9bd2c8cfa3fc48f34247e4a096f113836887125d13f0
+Model attempts: 0/6
+Saved iteration: .../evidence/offline-all/20260830T101752494309Z/iteration.json
+MSFT msft_segment_growth_mix: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_segment_profitability_margin: READY / COMPLETED / JUDGE_NOT_RUN
+MSFT msft_openai_nonoperating_quantified: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_operating_expense_multi_driver: READY / COMPLETED / JUDGE_SKIPPED
+AMZN amzn_capability_probe: BLOCKED / NOT_RUN / NOT_RUN
+GOOGL googl_holdout_capability_probe: BLOCKED / NOT_RUN / NOT_RUN

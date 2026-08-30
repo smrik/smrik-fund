@@ -195,6 +195,60 @@ def run_analyst(
 	return result, metadata
 
 
+def run_analyst_on_investigation(
+	ticker: str,
+	pnl: pd.DataFrame,
+	investigation: dict[str, Any],
+	*,
+	client: Any | None = None,
+	model: str = DEFAULT_MODEL,
+	reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+	run_id: str | None = None,
+) -> tuple[AnalystResult, dict[str, Any]]:
+	"""Propose normalization candidates from one completed filing investigation.
+
+	This is the join between "explain why a line moved" and "adjust the model".
+	The two stages ask different questions: an investigation lists the drivers of
+	a movement, while the Analyst decides which of those items should be removed
+	from normalized earnings.  Most drivers are not normalization candidates -
+	segment revenue growth explains a movement and should never be normalized
+	out - so the filtering stays a model judgment here rather than a mechanical
+	mapping from drivers to candidates.
+
+	The investigation's own evidence packet is reused unchanged, so the Analyst
+	sees exactly the filing text the investigation was grounded in.
+	"""
+	if not isinstance(investigation, dict):
+		raise TypeError("investigation must be the saved investigation payload")
+	if str(investigation.get("status") or "").casefold() != "completed":
+		raise AdjustmentAnalysisError(
+			"investigation did not complete; there is nothing to propose from"
+		)
+	evidence_path = investigation.get("evidence_path")
+	if not evidence_path or not Path(evidence_path).is_file():
+		raise AdjustmentAnalysisError(
+			f"investigation evidence packet is missing: {evidence_path}"
+		)
+	packet = Path(evidence_path).read_text(encoding="utf-8")
+	result, metadata = run_analyst(
+		ticker,
+		pnl,
+		packet,
+		client=client,
+		model=model,
+		reasoning_effort=reasoning_effort,
+		evidence_ref=str(evidence_path),
+		run_id=run_id,
+	)
+	metadata = dict(metadata)
+	metadata["source_investigation"] = {
+		"evidence_path": str(evidence_path),
+		"finding_rank": (investigation.get("finding") or {}).get("rank"),
+		"status": investigation.get("status"),
+	}
+	return result, metadata
+
+
 def save_analyst_result(
 	ticker: str,
 	result: AnalystResult,

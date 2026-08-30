@@ -18,6 +18,7 @@ from smrik_fund.ingestion.analytical_scan import (
 from smrik_fund.ingestion.segments import (
 	build_segment_enrichment,
 	extract_segment_facts,
+	load_segment_analytics,
 	save_segment_analytics,
 	save_segment_reconciliation,
 )
@@ -271,3 +272,6 @@ class SegmentAnalyticsTests(TestCase):
 			reconciliation_path = save_segment_reconciliation("MSFT", checks, directory)
 			self.assertTrue(Path(analytics_path).exists())
 			self.assertTrue(Path(reconciliation_path).exists())
+			loaded = load_segment_analytics("MSFT", directory)
+			self.assertEqual(loaded["segment_ref"].tolist(), segments["segment_ref"].tolist())
+			self.assertTrue(loaded.attrs["segment_refs_persisted"])
