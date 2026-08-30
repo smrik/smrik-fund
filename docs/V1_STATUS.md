@@ -64,6 +64,15 @@ Not in Part F. Do not extend. Fate decided after V1 (V2 candidates or deletion):
 - `discovery.py` (overlaps with analytical_scan)
 - eval cases that target these stages
 
+## V2 backlog (parked ideas — recorded, NOT approved for V1)
+
+- Segment-driven forecasting (raised 2026-08-30): add segment revenue /
+  operating-income rows to the analytical model; LLM proposes per-segment
+  forecast drivers (growth, margin) with evidence, through the same
+  analyst → reviewer → gate pattern. Hard dependency: consumes the ADJUSTED
+  P&L, which exists only after V1 closes. `segments.py` (frozen) is the
+  starting material.
+
 ## Rules
 
 - Only tasks from Section 2 Part F are in scope.
