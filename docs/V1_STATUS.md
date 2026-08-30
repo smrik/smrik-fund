@@ -29,10 +29,27 @@ Last updated: 2026-08-30
 
 ## The plan (in order, nothing else)
 
-1. **Patrik: pick the first known case.** Read the 29 proposals in
-   `data/MSFT/03_output/adjustment_history.csv`. Approve or reject each with a
-   one-line reason. The known case is the clearest disclosed one (spec §69:
-   not the hardest judgment case). ~1–2 hours. Unblocks #5.
+1. **DONE 2026-08-30 — known case chosen by Patrik: OpenAI recapitalization
+   dilution gain.** Triage of adjustment_history.csv also done: 23 LLM
+   proposals were amount-less R&D exhaust; the 3 quantified UTP-interest
+   adjustments were correctly rejected as recurring.
+
+   Known-case expected values (spec §41 analyst-eval fields), source: FY2026
+   10-K, accession 0001193125-26-323660, Note 3 / MD&A:
+   - target_line: Other income (expense), net (reported FY2026 total +$10,697M)
+   - period: 2026-06-30 (FY)
+   - item_amount: $6.5B — disclosed verbatim ("$6.5 billion of net gains ...
+     from investments in OpenAI"); exact dilution-only figure is NOT separately
+     disclosed (verified: all 3 filing occurrences say "primarily")
+   - item_effect_on_line: increased_line → line_delta −$6.5B → adjusted +$4,197M
+     (no zero-crossing)
+   - amount_basis: disclosed
+   - evidence packets already on disk: evidence/01_openai_* files
+   - expected gate outcome: human review (materiality — $6.5B fails the 5%
+     operating-income cap), then human approve. Auto-approve is NOT expected.
+
+   Runner-up case (backlog): Xbox impairment — named in MD&A with no amount in
+   current packets; needs the impairment note retrieved before usable.
 2. **Analyst eval passes on the known case** (#5, #6). Eval harness already exists.
 3. **Golden end-to-end test** (Part F Task 12) (#16).
 4. **V1 done. Stop.** Review the whole product before any new work.
