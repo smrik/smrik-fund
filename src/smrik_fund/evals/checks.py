@@ -37,6 +37,7 @@ _TRIVIAL_MAGNITUDE = 10.0
 _HASHED_INPUTS = (
 	("source_artifact", "source_sha256"),
 	("source_manifest_artifact", "source_manifest_sha256"),
+	("evidence_artifact", "evidence_sha256"),
 	("scan_artifact", "scan_sha256"),
 	("analytical_pnl_artifact", "analytical_pnl_sha256"),
 	("reconciliation_artifact", "reconciliation_sha256"),

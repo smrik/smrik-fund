@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
+from contextlib import suppress
+from pathlib import Path
 
 import pandas as pd
 
@@ -24,6 +28,14 @@ _ITEM_EFFECT_LINE_DELTAS = {
 }
 
 _HISTORY_COLUMNS = {"adjustment_id", "version", "status"}
+_HISTORY_STATUSES = {"proposed", "approved", "rejected", "withdrawn"}
+_AUTHORITY_ALIASES = {
+    "human-approved": "human-approved",
+    "human-approved-decision": "human-approved",
+    "system-proposal": "system-proposal",
+    "system-reviewed-provisional": "system-reviewed-provisional",
+    "system-reviewed-provisional-decision": "system-reviewed-provisional",
+}
 _ADJUSTMENT_COLUMNS = {"target_line", "period", "item_amount", "item_effect_on_line"}
 _IDENTITY_FIELDS = {
     "identity_version",
@@ -44,6 +56,33 @@ _ROW_KEY_METADATA_FIELDS = {
     "balance",
     "weight",
 }
+
+
+def atomic_write_csv(path: Path, frame: pd.DataFrame) -> None:
+	"""Write one CSV by replacement, leaving an existing file untouched on error."""
+	path = Path(path)
+	path.parent.mkdir(parents=True, exist_ok=True)
+	temporary_path: str | None = None
+	try:
+		with tempfile.NamedTemporaryFile(
+			mode="w",
+			encoding="utf-8",
+			newline="",
+			dir=path.parent,
+			prefix=f".{path.name}.",
+			suffix=".tmp",
+			delete=False,
+		) as handle:
+			temporary_path = handle.name
+			frame.to_csv(handle, index=False)
+			handle.flush()
+			os.fsync(handle.fileno())
+		os.replace(temporary_path, path)
+		temporary_path = None
+	finally:
+		if temporary_path is not None:
+			with suppress(FileNotFoundError):
+				os.unlink(temporary_path)
 
 
 def _json_object(value: object) -> dict[str, object] | None:
@@ -160,6 +199,11 @@ def validated_history_identity_rows(
 			return None
 		if declared_version not in {None, IDENTITY_VERSION}:
 			return None
+		if identity_object is None and status == "rejected":
+			# An identity-less rejection is audit-only workflow evidence: it can
+			# never apply or match a future candidate, so a stray identity-version
+			# stamp on it must not fail the whole history closed.
+			continue
 		if (
 			identity_object is None
 			or identity_object.get("identity_version") != IDENTITY_VERSION
@@ -193,7 +237,7 @@ def validated_history_identity_rows(
 			or not state_matches_snapshot
 			or not isinstance(adjustment_id, str)
 			or not adjustment_id.strip()
-			or status not in {"proposed", "approved", "rejected"}
+			or status not in _HISTORY_STATUSES
 			or pd.isna(versions)
 			or versions < 1
 			or versions % 1 != 0
@@ -225,6 +269,32 @@ def validated_history_identity_rows(
 	):
 		return None
 	return identity_rows
+
+
+def _optional_text(row: dict[str, object], field: str) -> str | None:
+	value = row.get(field)
+	if value is None:
+		return None
+	try:
+		if bool(pd.isna(value)):
+			return None
+	except (TypeError, ValueError):
+		pass
+	if not isinstance(value, str) or not value.strip():
+		return None
+	return value.strip()
+
+
+def _authority(row: dict[str, object]) -> str:
+	value = _optional_text(row, "authority")
+	if value is None:
+		return "unknown"
+	normalized = "-".join(value.casefold().replace("_", "-").split())
+	return _AUTHORITY_ALIASES.get(normalized, "unknown")
+
+
+def _source_snapshot(row: dict[str, object]) -> str | None:
+	return _optional_text(row, "source_snapshot_id")
 
 
 def derive_line_delta(
@@ -265,12 +335,17 @@ _DERIVED_LABELS = {
 }
 
 
-def resolve_current_adjustments(history: pd.DataFrame) -> pd.DataFrame:
-    """Select the latest approved version for each adjustment ID.
+def resolve_current_adjustments(
+    history: pd.DataFrame,
+    *,
+    source_snapshot_id: str | None = None,
+) -> pd.DataFrame:
+    """Resolve append-only decision events into the effective adjustments.
 
-    Non-approved workflow rows remain history only: they do not remove an
-    earlier approved version from the current applied set. A later approved
-    version replaces that ID's earlier approved version rather than stacking.
+    Rejected/proposed rows are inert, an approved replacement replaces the
+    prior approval once, and an explicitly human-authorized withdrawal ends the
+    current effect. Missing authority/source metadata remains ``unknown`` for
+    legacy rows; provisional system rows cannot replace a human approval.
     """
     if not isinstance(history, pd.DataFrame):
         raise TypeError("history must be a pandas DataFrame")
@@ -286,27 +361,139 @@ def resolve_current_adjustments(history: pd.DataFrame) -> pd.DataFrame:
     canonical["target_row_key"] = [
         row["_identity"]["target_row_key"] for row in identity_rows
     ]
-    approved = canonical.loc[canonical["status"].eq("approved")].copy()
-    if approved.empty:
-        return approved.reset_index(drop=True)
-    if approved["adjustment_id"].isna().any():
+    canonical["_source_index"] = [row["_source_index"] for row in identity_rows]
+    if canonical.empty:
+        return canonical.reset_index(drop=True)
+    if canonical["adjustment_id"].isna().any():
         raise ValueError("adjustment_id cannot be missing")
-    versions = pd.to_numeric(approved["version"], errors="coerce")
+    versions = pd.to_numeric(canonical["version"], errors="coerce")
     if versions.isna().any() or (versions < 1).any() or (versions % 1 != 0).any():
         raise ValueError("version must be an integer greater than or equal to 1")
-    if approved.duplicated(["adjustment_id", "version"]).any():
+    if canonical.duplicated(["adjustment_id", "version"]).any():
         raise ValueError("each adjustment_id/version pair must be unique")
 
-    latest = (
-        approved.assign(_version_number=versions.loc[approved.index])
-        .sort_values(["adjustment_id", "_version_number"], kind="mergesort")
-        .groupby("adjustment_id", sort=True, dropna=False)
-        .tail(1)
-        .drop(columns="_version_number")
+    rows: list[dict[str, object]] = []
+    for _adjustment_id, group in canonical.assign(
+        _version_number=versions.loc[canonical.index]
+    ).groupby("adjustment_id", sort=True, dropna=False):
+        effective: dict[str, object] | None = None
+        withdrawn = False
+        for record in group.sort_values(
+            ["_version_number", "_source_index"], kind="mergesort"
+        ).to_dict(orient="records"):
+            status = str(record.get("status", ""))
+            authority = _authority(record)
+            if status == "withdrawn":
+                if authority != "human-approved":
+                    continue
+                effective = None
+                withdrawn = True
+                continue
+            if status != "approved":
+                continue
+            if authority == "system-proposal":
+                continue
+            if withdrawn and authority != "human-approved":
+                continue
+            if (
+                effective is None
+                or _authority(effective) != "human-approved"
+                or authority == "human-approved"
+            ):
+                effective = record
+                withdrawn = False
+        if effective is None:
+            continue
+        selected = dict(effective)
+        selected.pop("_version_number", None)
+        selected["_authority_status"] = _authority(selected)
+        selected_snapshot = _source_snapshot(selected)
+        applicability = "unknown" if selected_snapshot is None else "current"
+        if source_snapshot_id is not None:
+            # An explicit source selection is a reproducibility decision.  A
+            # rejected/proposed later source cannot invalidate that selection.
+            applicability = (
+                "current"
+                if selected_snapshot == source_snapshot_id
+                else "needs_reassessment"
+            )
+        else:
+            for record in group.to_dict(orient="records"):
+                if record.get("_version_number", 0) <= selected.get("version", 0):
+                    continue
+                # Rejected rows are workflow evidence only.  A still-proposed
+                # source change requires an explicit reassessment when no source
+                # was selected by the caller.
+                if str(record.get("status", "")) not in {"approved", "proposed"}:
+                    continue
+                if (
+                    str(record.get("status", "")) == "approved"
+                    and _authority(record) == "system-proposal"
+                ):
+                    continue
+                if (
+                    _authority(selected) == "human-approved"
+                    and _authority(record) != "human-approved"
+                ):
+                    continue
+                other_snapshot = _source_snapshot(record)
+                if other_snapshot is not None and other_snapshot != selected_snapshot:
+                    applicability = "needs_reassessment"
+                    break
+        selected["_source_applicability"] = applicability
+        rows.append(selected)
+    if not rows:
+        return canonical.iloc[0:0].copy().reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
         .sort_values("adjustment_id", kind="mergesort")
         .reset_index(drop=True)
     )
-    return latest
+
+
+def append_withdrawal(
+	history: pd.DataFrame,
+	adjustment_id: str,
+	*,
+	reason: str,
+	run_id: str | None = None,
+) -> pd.DataFrame:
+	"""Append one explicit human withdrawal without rewriting history."""
+	if not isinstance(history, pd.DataFrame):
+		raise TypeError("history must be a pandas DataFrame")
+	if not isinstance(adjustment_id, str) or not adjustment_id.strip():
+		raise ValueError("adjustment_id must be a non-empty string")
+	if not isinstance(reason, str) or not reason.strip():
+		raise ValueError("withdrawal requires a short reason")
+	canonical = validated_history_identity_rows(history)
+	if canonical is None:
+		raise ValueError("adjustment history identity is legacy-effective or corrupted; fail closed")
+	current = resolve_current_adjustments(history)
+	matching = current.loc[current["adjustment_id"].eq(adjustment_id)]
+	if matching.empty:
+		raise ValueError(f"adjustment {adjustment_id!r} is not currently effective")
+	prior_versions = pd.to_numeric(
+		history.loc[history["adjustment_id"].eq(adjustment_id), "version"],
+		errors="coerce",
+	)
+	if prior_versions.empty or prior_versions.isna().any():
+		raise ValueError("withdrawal requires valid prior versions")
+	row = matching.iloc[0].to_dict()
+	for key in ("_authority_status", "_source_applicability"):
+		row.pop(key, None)
+	row.update(
+		{
+			"version": int(prior_versions.max()) + 1,
+			"status": "withdrawn",
+			"run_id": run_id or "human-withdrawal",
+			"origin": "human",
+			"authority": "human-approved",
+			"gate_decision": "human_withdrawal",
+			"gate_reasons": json.dumps([reason.strip()]),
+			"withdrawal_reason": reason.strip(),
+		}
+	)
+	return pd.concat([history.copy(deep=True), pd.DataFrame([row])], ignore_index=True)
 
 
 def apply_adjustments(
@@ -324,7 +511,21 @@ def apply_adjustments(
     if not periods:
         raise ValueError("analytical P&L must contain annual FY periods")
 
+    if (
+        "_source_applicability" in adjustments
+        and adjustments["_source_applicability"].eq("needs_reassessment").any()
+    ):
+        raise ValueError(
+            "effective adjustment source changed; explicit reassessment is required"
+        )
     current = _current_approved_adjustments(adjustments)
+    if (
+        "_source_applicability" in current
+        and current["_source_applicability"].eq("needs_reassessment").any()
+    ):
+        raise ValueError(
+            "effective adjustment source changed; explicit reassessment is required"
+        )
     result = pnl.copy(deep=True)
     if not current.empty:
         selector_column = "target_row_key" if "target_row_key" in current else "target_line"
@@ -529,7 +730,7 @@ def _recalculate_subtotals(pnl: pd.DataFrame, periods: list[str]) -> None:
 
         operating_income = _subtract(
             gross_profit,
-            _concept_value(pnl, "ResearchAndDevelopmentExpenses", period),
+            _label_value(pnl, "Research and development", period),
             _label_value(pnl, "Sales and marketing", period),
             _label_value(pnl, "General and administrative", period),
         )

@@ -8,6 +8,7 @@ from typing import Any, Literal
 import pandas as pd
 import typer
 
+from .daily_cli import app as daily_app
 from .ingestion.adjustment_analysis import (
 	DEFAULT_MODEL,
 	DEFAULT_REASONING_EFFORT,
@@ -20,9 +21,12 @@ from .ingestion.adjustment_analysis import (
 from .ingestion.adjustments import (
 	ADJUSTMENT_SCHEMA_VERSION,
 	IDENTITY_VERSION,
+	_authority,
 	_find_line_index,
 	_is_derived_line,
+	append_withdrawal,
 	apply_adjustments,
+	atomic_write_csv,
 	derive_line_delta,
 	resolve_current_adjustments,
 )
@@ -34,6 +38,7 @@ from .ingestion.adjustments import (
 )
 from .ingestion.analytical_scan import (
 	AnalyticalScanError,
+	AnalyticalScanFinding,
 	format_analytical_pnl_for_scan,
 	render_analytical_scan_summary,
 	run_analytical_scan,
@@ -66,6 +71,12 @@ from .ingestion.filing_investigation import (
 	render_finding_investigation_summary,
 	select_saved_finding,
 )
+from .ingestion.line_details import (
+	attach_model_rows,
+	build_line_details,
+	load_reported_detail_context,
+	load_reported_details,
+)
 from .ingestion.reconciliation import (
 	reconcile_pnl,
 	save_reconciliation_checks,
@@ -91,12 +102,14 @@ from .ingestion.statements import (
 	build_analytical_pnl,
 	get_latest_filing,
 	load_analytical_pnl,
+	prepare_pnl,
 	save_analytical_pnl,
 )
 
 app = typer.Typer(
 	no_args_is_help=True, help="A small fundamental investment research system."
 )
+app.add_typer(daily_app, name="daily")
 
 
 def _reconciliation_summary(checks: pd.DataFrame) -> dict[str, int]:
@@ -470,15 +483,27 @@ def _history_identity_lookup(
 		}
 	adjustment_id = next(iter(matching_ids))
 	id_rows = [row for row in identity_rows if row["adjustment_id"] == adjustment_id]
-	approved_rows = [row for row in id_rows if row.get("status") == "approved"]
-	if not approved_rows:
-		latest = max(id_rows, key=lambda row: row["version"])
+	current = resolve_current_adjustments(history)
+	effective = current.loc[current["adjustment_id"].eq(adjustment_id)]
+	if not effective.empty:
+		latest = effective.iloc[0].to_dict()
+		status = "approved"
 	else:
-		# Current state is governed by the latest approved version. A newer
-		# rejected/proposed workflow row must not hide that effective version.
-		latest = max(approved_rows, key=lambda row: row["version"])
+		withdrawn_rows = [
+			row
+			for row in id_rows
+			if row.get("status") == "withdrawn"
+			and _authority(row) == "human-approved"
+		]
+		if withdrawn_rows:
+			latest = max(withdrawn_rows, key=lambda row: row["version"])
+			status = "withdrawn"
+		else:
+			# Rejected/proposed workflow rows remain inspectable but cannot
+			# hide a prior approved state or terminate it.
+			latest = max(id_rows, key=lambda row: row["version"])
+			status = str(latest.get("status", ""))
 	latest_version = latest["version"]
-	status = str(latest.get("status", ""))
 	if _canonical_history_json(
 		latest.get("candidate_state")
 	) != _canonical_history_json(state):
@@ -489,7 +514,13 @@ def _history_identity_lookup(
 			"latest": latest,
 		}
 	return {
-		"status": "replay" if status == "approved" else "blocked_existing",
+		"status": (
+			"replay"
+			if status == "approved"
+			else "withdrawn"
+			if status == "withdrawn"
+			else "blocked_existing"
+		),
 		"adjustment_id": adjustment_id,
 		"version": latest_version,
 		"latest": latest,
@@ -1140,6 +1171,97 @@ def _gate_conditions(
 	)
 
 
+def _queries_from_finding(
+	finding: AnalyticalScanFinding,
+	pnl: pd.DataFrame | None = None,
+) -> list[str]:
+	"""Use scan questions as literal filing searches when they are phrases.
+
+	Questions are not filing text. If every question ends with ``?``, search
+	the affected P&L labels instead of the scan title, which is also not in
+	the filing.
+	"""
+	questions = [
+		question.strip()
+		for question in finding.investigation_questions
+		if isinstance(question, str) and question.strip()
+	]
+	phrases = [question for question in questions if not question.endswith("?")][:3]
+	if phrases:
+		return phrases
+	labels: list[str] = []
+	if pnl is not None:
+		observation = (finding.observation or "").casefold()
+		for ref in finding.affected_line_refs:
+			if not isinstance(ref, str) or len(ref) < 2 or ref[0] != "L":
+				continue
+			try:
+				position = int(ref[1:])
+			except ValueError:
+				continue
+			if position < 1 or position > len(pnl):
+				continue
+			label = pnl.iloc[position - 1].get("label")
+			if isinstance(label, str) and label.strip():
+				labels.append(label.strip())
+		labels = list(dict.fromkeys(labels))
+		labels.sort(
+			key=lambda label: (
+				0 if label.casefold() in observation else 1,
+				-len(label),
+			)
+		)
+		# Search the observation-linked line label. Literal retrieve ranks
+		# and bounds hits, so a common statement name is usable.
+		if labels:
+			return labels[:1]
+	title = finding.title.strip()
+	return [title] if title else []
+
+
+def _scan_reported_statement(
+	ticker: str,
+	pnl: pd.DataFrame,
+	*,
+	years: int,
+	model: str,
+	reasoning_effort: str,
+	output_root: str | Path,
+) -> tuple[Any, dict[str, Any], Path]:
+	"""One scan of the reported statement, shared by `analyze --scan` and `run`."""
+	filing = pnl.attrs.get("edgar_filing")
+	segments = None
+	if filing is not None:
+		try:
+			segments, segment_checks = build_segment_enrichment(
+				filing, pnl, years=years
+			)
+			save_segment_analytics(ticker, segments, output_root)
+			save_segment_reconciliation(ticker, segment_checks, output_root)
+		except SegmentAnalyticsError as exc:
+			typer.echo(
+				f"Segment analytics unavailable; using consolidated context: {exc}",
+				err=True,
+			)
+			segments = None
+	context = (
+		format_analytical_pnl_for_scan(pnl, segments)
+		if segments is not None
+		else format_analytical_pnl_for_scan(pnl)
+	)
+	result, metadata = run_analytical_scan(
+		ticker,
+		pnl,
+		filing=filing,
+		model=model,
+		reasoning_effort=reasoning_effort,
+		context=context,
+		segments=segments,
+	)
+	path = save_analytical_scan(ticker, result, metadata, context, output_root)
+	return result, metadata, path
+
+
 def _run_adjustment_analysis(
 	ticker: str,
 	pnl: pd.DataFrame,
@@ -1149,6 +1271,7 @@ def _run_adjustment_analysis(
 	output_root: str | Path = "data",
 	filing: Any | None = None,
 	materiality_passed: bool | None = None,
+	findings: list[AnalyticalScanFinding] | None = None,
 ) -> Path:
 	"""Run discovery/review and persist only deterministic safe approvals.
 
@@ -1173,49 +1296,81 @@ def _run_adjustment_analysis(
 	discovery_decisions: list[dict[str, Any]] = []
 	topic_records: list[dict[str, Any]] = []
 	work_items: list[dict[str, Any]] = []
-	try:
-		discovery_context = build_discovery_context(pnl, filing)
-		discovery_result, discovery_metadata = run_discovery(
-			ticker,
-			pnl,
-			discovery_context,
-			model=model,
-			reasoning_effort=reasoning_effort,
-			run_id=run_id,
-		)
-		retained_topics, discovery_decisions = deduplicate_topics(
-			discovery_result.topics
-		)
-	except DiscoveryError as exc:
-		raise AdjustmentAnalysisError(f"discovery failed: {exc}") from exc
+	worklist: list[dict[str, Any]] = []
+	if findings is not None:
+		for finding in findings:
+			queries = _queries_from_finding(finding, pnl)
+			if not queries:
+				continue
+			worklist.append(
+				{
+					"name": finding.title,
+					"queries": queries,
+					"topic_data": {
+						"name": finding.title,
+						"queries": queries,
+						"rank": finding.rank,
+						"importance": finding.importance,
+					},
+					"input_index": finding.rank,
+				}
+			)
+	else:
+		try:
+			discovery_context = build_discovery_context(pnl, filing)
+			discovery_result, discovery_metadata = run_discovery(
+				ticker,
+				pnl,
+				discovery_context,
+				model=model,
+				reasoning_effort=reasoning_effort,
+				run_id=run_id,
+			)
+			retained_topics, discovery_decisions = deduplicate_topics(
+				discovery_result.topics
+			)
+		except DiscoveryError as exc:
+			raise AdjustmentAnalysisError(f"discovery failed: {exc}") from exc
+		for topic in retained_topics:
+			topic_data = topic.model_dump(mode="json")
+			input_index = next(
+				(
+					decision["input_index"]
+					for decision in discovery_decisions
+					if decision.get("status") == "retained"
+					and decision.get("topic") == topic_data
+				),
+				None,
+			)
+			worklist.append(
+				{
+					"name": topic.name,
+					"queries": list(topic.queries),
+					"topic_data": topic_data,
+					"input_index": input_index,
+				}
+			)
 
-	for ordinal, topic in enumerate(retained_topics, start=1):
-		topic_data = topic.model_dump(mode="json")
-		slug = re.sub(r"[^a-z0-9]+", "_", topic.name.casefold()).strip("_") or "topic"
+	for ordinal, item in enumerate(worklist, start=1):
+		topic_name = item["name"]
+		topic_queries = item["queries"]
+		topic_data = item["topic_data"]
+		slug = re.sub(r"[^a-z0-9]+", "_", topic_name.casefold()).strip("_") or "topic"
 		evidence_path = (
 			output_directory / "evidence" / f"{ordinal:02d}_{slug}_{run_id}.md"
 		)
-		input_index = next(
-			(
-				decision["input_index"]
-				for decision in discovery_decisions
-				if decision.get("status") == "retained"
-				and decision.get("topic") == topic_data
-			),
-			None,
-		)
 		topic_record: dict[str, Any] = {
-			"input_index": input_index,
+			"input_index": item.get("input_index"),
 			"topic": topic_data,
-			"status": "discovered",
+			"status": "discovered" if findings is None else "scanned",
 			"evidence_path": str(evidence_path),
 		}
 		try:
 			evidence_packet, retrieval_metadata = retrieve_filing_evidence(
 				filing,
 				ticker,
-				topic.name,
-				topic.queries,
+				topic_name,
+				topic_queries,
 				output_path=evidence_path,
 			)
 			topic_record["retrieval"] = retrieval_metadata
@@ -1243,7 +1398,7 @@ def _run_adjustment_analysis(
 		analyst_metadata = dict(analyst_metadata)
 		analyst_metadata.update(retrieval_metadata)
 		analyst_metadata.update(
-			{"topic": topic.name, "evidence_file": str(evidence_path)}
+			{"topic": topic_name, "evidence_file": str(evidence_path)}
 		)
 		analysis_path = (
 			output_directory / "analysis" / (f"{ordinal:02d}_{slug}_{run_id}.json")
@@ -1283,8 +1438,8 @@ def _run_adjustment_analysis(
 		topic_records.append(topic_record)
 		work_items.append(
 			{
-				"topic": topic.name,
-				"queries": list(topic.queries),
+				"topic": topic_name,
+				"queries": list(topic_queries),
 				"packet": evidence_packet,
 				"metadata": analyst_metadata,
 				"result": result,
@@ -1470,6 +1625,199 @@ def _run_adjustment_analysis(
 				)
 				continue
 
+			# A Reviewer revision is a bounded correction request.  Never let the
+			# disputed candidate reach the application branch; preserve its review,
+			# then accept only one validated Analyst correction followed by one
+			# Reviewer re-check.
+			revision_record: dict[str, Any] | None = None
+			if review.verdict == "revise":
+				original_review = review
+				original_review_metadata = dict(review_metadata)
+				original_review_data = original_review.model_dump(mode="json")
+				revision_record = {
+					"status": "started",
+					"original_candidate": candidate_data,
+					"original_review": original_review_data,
+					"original_review_metadata": original_review_metadata,
+					"original_review_path": str(review_path),
+				}
+				revision_run_id = (
+					f"{run_id}-revision-{candidate_number + 1}"
+				)
+				try:
+					revised_result, revised_metadata = run_analyst(
+						ticker,
+						pnl,
+						packet,
+						model=model,
+						reasoning_effort=reasoning_effort,
+						evidence_ref=str(evidence_path),
+						run_id=revision_run_id,
+						revision_context={
+							"topic": item["topic"],
+							"original_candidate": candidate_data,
+							"reviewer": original_review_data,
+						},
+					)
+					revised_metadata = dict(revised_metadata)
+					revised_metadata["run_id"] = revision_run_id
+					revised_metadata["revision_of"] = str(review_path)
+					revised_metadata["revision_context"] = {
+						"topic": item["topic"],
+						"original_candidate": candidate_data,
+						"reviewer": original_review_data,
+					}
+					for key in (
+						"filing_accession",
+						"evidence_file",
+						"topic",
+						"filing_url",
+						"text_url",
+					):
+						if key in metadata:
+							revised_metadata.setdefault(key, metadata[key])
+					revision_analysis_path = analysis_path.with_name(
+						f"{analysis_path.stem}_candidate_{candidate_number + 1}_revision.json"
+					)
+					revision_analysis_path.write_text(
+						json.dumps(
+							{
+								"metadata": revised_metadata,
+								"result": revised_result.model_dump(mode="json"),
+							},
+							indent=2,
+							ensure_ascii=False,
+						)
+						+ "\n",
+						encoding="utf-8",
+					)
+					revision_record["revised_analysis_path"] = str(revision_analysis_path)
+					if revised_result.research_request:
+						raise AdjustmentAnalysisError(
+							"revision requested more evidence; bounded correction cannot retrieve it"
+						)
+					if len(revised_result.candidates) != 1:
+						raise AdjustmentAnalysisError(
+							"revision must return exactly one corrected candidate"
+						)
+					revised_candidate = revised_result.candidates[0]
+					revised_candidate_data = revised_candidate.model_dump(mode="json")
+					revision_record["revised_candidate"] = revised_candidate_data
+					if not revised_candidate.evidence_refs:
+						raise AdjustmentAnalysisError(
+							"revised candidate returned no evidence references"
+						)
+					revised_packet_identity = validate_evidence_refs(
+						packet,
+						revised_candidate.evidence_refs,
+						require_identity=filing is not None,
+					)
+					revised_identity = _candidate_identity(
+						ticker, pnl, revised_candidate, revised_packet_identity
+					)
+					if identity is None or revised_identity != identity:
+						raise AdjustmentAnalysisError(
+							"revision changed the candidate identity or scope"
+						)
+					revised_review, revised_review_metadata = run_reviewer(
+						ticker,
+						pnl,
+						revised_candidate,
+						packet,
+						model=model,
+						reasoning_effort=reasoning_effort,
+						evidence_ref=str(evidence_path),
+						run_id=revision_run_id,
+					)
+					revised_review_metadata = dict(revised_review_metadata)
+					revised_review_metadata["run_id"] = revision_run_id
+					revised_review_metadata["revision_of"] = str(review_path)
+					for key in (
+						"filing_accession",
+						"evidence_file",
+						"topic",
+						"filing_url",
+						"text_url",
+					):
+						if key in metadata:
+							revised_review_metadata.setdefault(key, metadata[key])
+					revision_review_path = save_reviewer_result(
+						ticker,
+						f"{review_file_id}_revision",
+						revised_candidate,
+						revised_review,
+						revised_review_metadata,
+						output_root=output_root,
+					)
+					revision_record.update(
+						{
+							"revised_review": revised_review.model_dump(mode="json"),
+							"revised_review_metadata": revised_review_metadata,
+							"revised_review_path": str(revision_review_path),
+						}
+					)
+					if (
+						revised_review.verdict == "accept"
+						and derive_line_delta(
+							revised_candidate.item_amount,
+							revised_candidate.item_effect_on_line,
+						)
+						is None
+					):
+						raise AdjustmentAnalysisError(
+							"accepted revision has no mechanically derivable line delta"
+						)
+					effective_candidate = revised_candidate
+					effective_review = revised_review
+					if effective_review.verdict != "accept":
+						revision_record["status"] = (
+							"rejected" if effective_review.verdict == "reject" else "unresolved"
+						)
+						revision_record["error"] = (
+							"Reviewer re-check rejected the corrected proposal"
+							if effective_review.verdict == "reject"
+							else "Reviewer re-check requested another revision; bound exhausted"
+						)
+						records.append(
+							{
+								**base_record,
+								"candidate": revised_candidate_data,
+								"review": revised_review.model_dump(mode="json"),
+								"review_metadata": revised_review_metadata,
+								"review_path": str(revision_review_path),
+								"revision": revision_record,
+								"final_status": revision_record["status"],
+								"application_status": "not_applied",
+								"error": revision_record["error"],
+							}
+						)
+						continue
+					revision_record["status"] = "accepted"
+					revision_record["recheck"] = "accept"
+					candidate = effective_candidate
+					review = effective_review
+					candidate_data = candidate.model_dump(mode="json")
+					state = _canonical_json(_candidate_state(candidate))
+					review_metadata = revised_review_metadata
+					review_path = revision_review_path
+				except (AdjustmentAnalysisError, FilingEvidenceError, ReviewerError) as exc:
+					revision_record["status"] = "unresolved"
+					revision_record["error"] = str(exc)
+					records.append(
+						{
+							**base_record,
+							"candidate": candidate_data,
+							"review": original_review_data,
+							"review_metadata": original_review_metadata,
+							"review_path": str(review_path),
+							"revision": revision_record,
+							"final_status": "unresolved",
+							"application_status": "not_applied",
+							"error": str(exc),
+						}
+					)
+					continue
+
 			multi_period_evidence = _multi_period_evidence(
 				working_history, run_families, identity
 			)
@@ -1501,7 +1849,21 @@ def _run_adjustment_analysis(
 			# Canonical approval additionally requires the feature switch, so
 			# a passing shadow result can never append history by itself.
 			shadow_auto_approve = gate.eligible_for_auto_approval
-			is_approved = (
+			line_delta = derive_line_delta(
+				candidate.item_amount, candidate.item_effect_on_line
+			)
+			# Scan/run path: after notes retrieve, apply only reviewer accept
+			# with a signed delta. Revisions pass the bounded re-check above.
+			# Reject stays off the statement.
+			verdict = str(review.verdict or "").casefold()
+			reviewed_accept = (
+				findings is not None
+				and verdict == "accept"
+				and line_delta is not None
+				and bool(candidate.evidence_refs)
+				and lookup["status"] == "new"
+			)
+			is_approved = reviewed_accept or (
 				shadow_auto_approve
 				and ENABLE_CANONICAL_AUTO_APPROVAL
 				and lookup["status"] == "new"
@@ -1527,6 +1889,7 @@ def _run_adjustment_analysis(
 					"review": review_data,
 					"review_metadata": review_metadata,
 					"review_path": str(review_path),
+					**({"revision": revision_record} if revision_record else {}),
 					"normalization": {
 						"assessment": review_data["normalization_assessment"],
 						"recurrence_class": review_data["recurrence_class"],
@@ -1706,17 +2069,47 @@ def _run_adjustment_analysis(
 			if resolution_history.empty
 			else resolve_current_adjustments(resolution_history)
 		)
-		adjusted_pnl = apply_adjustments(pnl, current_adjustments)
+		adjusted_core = apply_adjustments(pnl, current_adjustments)
+		adjusted_checks = reconcile_pnl(adjusted_core)
+		if (adjusted_checks["status"] == "FAIL").any():
+			raise ValueError("adjusted P&L reconciliation failed")
+		segment_path = output_directory / "segment_analytics.csv"
+		segments = (
+			load_segment_analytics(ticker, output_root)
+			if segment_path.is_file()
+			else None
+		)
+		reported_details_path = output_directory / "reported_details.csv"
+		reported_detail_context = load_reported_detail_context(reported_details_path)
+		reported_details = load_reported_details(
+			reported_details_path,
+			source_context=reported_detail_context,
+		)
+		line_details = build_line_details(
+			pnl,
+			segments=segments,
+			adjustments=current_adjustments,
+			reported_details=reported_details,
+			source_context=reported_detail_context,
+		)
+		periods = [
+			column
+			for column in adjusted_core.columns
+			if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
+		]
+		adjusted_pnl = attach_model_rows(adjusted_core, line_details)
+		if periods:
+			adjusted_pnl = prepare_pnl(adjusted_pnl, years=len(periods))
 	except (KeyError, TypeError, ValueError) as exc:
 		raise AdjustmentAnalysisError(f"adjustment application failed: {exc}") from exc
 
 	adjusted_pnl_path = output_directory / "adjusted_pnl.csv"
 	adjusted_pnl.to_csv(adjusted_pnl_path, index=False)
-	adjusted_checks = reconcile_pnl(adjusted_pnl)
 	adjusted_reconciliation_path = (
 		output_directory / "adjusted_reconciliation_checks.csv"
 	)
 	adjusted_checks.to_csv(adjusted_reconciliation_path, index=False)
+	line_details.to_csv(output_directory / "line_details.csv", index=False)
 	if (adjusted_checks["status"] == "FAIL").any():
 		raise AdjustmentAnalysisError(
 			f"adjusted P&L reconciliation failed; see {adjusted_reconciliation_path}"
@@ -1751,7 +2144,7 @@ def _run_adjustment_analysis(
 		"adjusted_reconciliation_path": str(adjusted_reconciliation_path),
 		"reported_reconciliation": _reconciliation_summary(reconciliation_checks),
 		"adjusted_reconciliation": _reconciliation_summary(adjusted_checks),
-		"reported_equals_adjusted": pnl.round(10).equals(adjusted_pnl.round(10)),
+		"reported_equals_adjusted": pnl.round(10).equals(adjusted_core.round(10)),
 		"normalization_summary": {
 			"schema_version": "normalization-summary-v1",
 			"groups": normalization_groups,
@@ -1912,7 +2305,7 @@ def _decision_history_row(
 	context_or_none: dict[str, Any] | None,
 	record: dict[str, Any],
 	*,
-	status: Literal["approved", "rejected"],
+	status: Literal["approved", "rejected", "withdrawn"],
 	run_id: str,
 	override_reason: str | None = None,
 	reject_reason: str | None = None,
@@ -1924,17 +2317,19 @@ def _decision_history_row(
 	normalization = record.get("normalization") or {}
 	review = record.get("review") or {}
 
-	if status == "rejected":
+	if status in {"rejected", "withdrawn"}:
 		if context_or_none is not None:
 			adjustment_id = context_or_none.get("adjustment_id")
 			version = int(context_or_none.get("latest_version") or 0) + 1
 		else:
 			# Identity-less rejects cannot tie to an existing item; they are
 			# recorded for audit only and never match future candidates.
-			adjustment_id = None
+			adjustment_id = None if status == "rejected" else ""
 			version = 1
 		if not reject_reason or not reject_reason.strip():
-			raise ReviewActionError("a rejection requires a short reason")
+			raise ReviewActionError(
+				"a withdrawal/rejection requires a short reason"
+			)
 	else:
 		assert context_or_none is not None
 		adjustment_id = context_or_none.get("adjustment_id")
@@ -1954,7 +2349,9 @@ def _decision_history_row(
 		"adjustment_id": adjustment_id,
 		"version": version,
 		"schema_version": ADJUSTMENT_SCHEMA_VERSION,
-		"identity_version": IDENTITY_VERSION,
+		# An identity-less audit rejection must not claim the identity version:
+		# the stamp would read as a malformed v2 claim and fail history closed.
+		"identity_version": IDENTITY_VERSION if identity else None,
 		"candidate_identity": identity,
 		"candidate_state": state,
 		"run_id": run_id,
@@ -1970,6 +2367,9 @@ def _decision_history_row(
 		"item_effect_on_line": item_effect,
 		"line_delta": line_delta,
 		"status": status,
+		"authority": (
+			"human-approved" if status in {"approved", "withdrawn"} else None
+		),
 		"amount_basis": candidate.get("amount_basis"),
 		"reviewer_verdict": review.get("verdict"),
 		"evidence_strength": review.get("evidence_strength"),
@@ -1979,7 +2379,9 @@ def _decision_history_row(
 		"multi_period_evidence": normalization.get("multi_period_evidence"),
 		"gate_decision": "human_decision",
 		"gate_reasons": json.dumps(
-			[reject_reason] if reject_reason else ["human_accepted"]
+			[reject_reason]
+			if reject_reason
+			else ["human_accepted"]
 		),
 		"materiality_eligible": None,
 		"pct_revenue": metrics.get("pct_revenue"),
@@ -1987,6 +2389,7 @@ def _decision_history_row(
 		"pct_operating_income": metrics.get("pct_operating_income"),
 		"human_override_reason": override_reason,
 		"reject_reason": reject_reason,
+		"withdrawal_reason": reject_reason if status == "withdrawn" else None,
 		"reason": candidate.get("reason"),
 	}
 	return row
@@ -2000,7 +2403,26 @@ def _append_history_row(
 		if history.empty
 		else pd.concat([history, pd.DataFrame([row])], ignore_index=True)
 	)
-	updated.to_csv(history_path, index=False)
+	atomic_write_csv(history_path, updated)
+	return updated
+
+
+def withdraw_adjustment(
+	history_path: Path,
+	adjustment_id: str,
+	*,
+	reason: str,
+	run_id: str | None = None,
+) -> pd.DataFrame:
+	"""Append an explicit human withdrawal and persist the history file."""
+	history = _load_adjustment_history(history_path)
+	updated = append_withdrawal(
+		history,
+		adjustment_id,
+		reason=reason,
+		run_id=run_id,
+	)
+	atomic_write_csv(history_path, updated)
 	return updated
 
 
@@ -2075,6 +2497,33 @@ def _rebuild_adjusted_outputs(
 		current = resolve_current_adjustments(history)
 		adjusted = apply_adjustments(pnl, current)
 		adjusted_checks = reconcile_pnl(adjusted)
+		segment_path = output_directory / "segment_analytics.csv"
+		segments = (
+			load_segment_analytics(ticker, output_root)
+			if segment_path.is_file()
+			else None
+		)
+		reported_details_path = output_directory / "reported_details.csv"
+		reported_detail_context = load_reported_detail_context(reported_details_path)
+		reported_details = load_reported_details(
+			reported_details_path,
+			source_context=reported_detail_context,
+		)
+		line_details = build_line_details(
+			pnl,
+			segments=segments,
+			adjustments=current,
+			reported_details=reported_details,
+			source_context=reported_detail_context,
+		)
+		periods = [
+			column
+			for column in adjusted.columns
+			if isinstance(column, str) and ANNUAL_PERIOD_PATTERN.fullmatch(column)
+		]
+		adjusted = attach_model_rows(adjusted, line_details)
+		if periods:
+			adjusted = prepare_pnl(adjusted, years=len(periods))
 	except (KeyError, TypeError, ValueError) as exc:
 		typer.echo(f"Rebuild failed: {exc}", err=True)
 		return
@@ -2082,13 +2531,16 @@ def _rebuild_adjusted_outputs(
 	adjusted.to_csv(adjusted_path, index=False)
 	checks_path = output_directory / "adjusted_reconciliation_checks.csv"
 	adjusted_checks.to_csv(checks_path, index=False)
+	line_details_path = output_directory / "line_details.csv"
+	line_details.to_csv(line_details_path, index=False)
 
 	summary_passed = int((adjusted_checks["status"] == "PASS").sum())
 	summary_failed = int((adjusted_checks["status"] == "FAIL").sum())
 	typer.echo("")
 	typer.echo(
 		f"Adjusted P&L rebuilt ({current.shape[0]} effective adjustments): "
-		f"{adjusted_path} | reconciliation {summary_passed} pass / {summary_failed} fail"
+		f"{adjusted_path} | details {line_details_path} | "
+		f"reconciliation {summary_passed} pass / {summary_failed} fail"
 	)
 	for row in current.to_dict(orient="records"):
 		adjusted_value = _reported_source_value(
@@ -2302,42 +2754,15 @@ def analyze(
 	_save_and_report_reconciliation(ticker, pnl, output_root)
 	if scan:
 		try:
-			segments = None
-			filing = pnl.attrs.get("edgar_filing")
-			if filing is not None:
-				try:
-					segments, segment_checks = build_segment_enrichment(
-						filing, pnl, years=years
-					)
-					save_segment_analytics(ticker, segments, output_root)
-					save_segment_reconciliation(ticker, segment_checks, output_root)
-				except SegmentAnalyticsError as exc:
-					typer.echo(
-						f"Segment analytics unavailable; using consolidated context: {exc}",
-						err=True,
-					)
-					segments = None
-			context = (
-				format_analytical_pnl_for_scan(pnl, segments)
-				if segments is not None
-				else format_analytical_pnl_for_scan(pnl)
-			)
-			result, metadata = run_analytical_scan(
+			result, _metadata, scan_path = _scan_reported_statement(
 				ticker,
 				pnl,
-				filing=filing,
+				years=years,
 				model=model,
 				reasoning_effort=reasoning_effort,
-				context=context,
+				output_root=output_root,
 			)
-			output_path = save_analytical_scan(
-				ticker,
-				result,
-				metadata,
-				context,
-				output_root,
-			)
-			typer.echo(f"Saved analytical scan: {output_path}")
+			typer.echo(f"Saved analytical scan: {scan_path}")
 			typer.echo(render_analytical_scan_summary(result))
 		except AnalyticalScanError as exc:
 			typer.echo(f"Analytical scan unavailable: {exc}", err=True)
@@ -2354,6 +2779,104 @@ def analyze(
 			)
 		except AdjustmentAnalysisError as exc:
 			typer.echo(f"Adjustment analysis unavailable: {exc}", err=True)
+
+
+@app.command()
+def run(
+	ticker: str,
+	years: int = typer.Option(
+		default=3,
+		help="Number of annual periods to include.",
+	),
+	model: str = typer.Option(
+		default=DEFAULT_MODEL,
+		help="OpenAI model for proposals. Default: gpt-5.6-luna",
+	),
+	reasoning_effort: str = typer.Option(
+		default=DEFAULT_REASONING_EFFORT,
+		help="OpenAI reasoning effort for proposals; override as needed.",
+	),
+	output_root: Path = typer.Option(
+		default=Path("data"),
+		help="Workspace root containing data outputs.",
+	),
+) -> None:
+	"""Run the historical P&L scan and adjustment pipeline."""
+	ticker = ticker.strip().upper()
+	pnl = build_analytical_pnl(ticker, years=years)
+	pnl_path = save_analytical_pnl(ticker, pnl, output_root)
+	typer.echo(f"Saved analytical P&L: {pnl_path}")
+	_save_and_report_reconciliation(ticker, pnl, output_root)
+	try:
+		scan_result, _scan_metadata, scan_path = _scan_reported_statement(
+			ticker,
+			pnl,
+			years=years,
+			model=model,
+			reasoning_effort=reasoning_effort,
+			output_root=output_root,
+		)
+		typer.echo(f"Saved analytical scan: {scan_path}")
+		typer.echo(render_analytical_scan_summary(scan_result))
+		manifest_path = _run_adjustment_analysis(
+			ticker,
+			pnl,
+			model,
+			reasoning_effort,
+			output_root=output_root,
+			filing=pnl.attrs.get("edgar_filing"),
+			findings=scan_result.findings,
+		)
+	except (AdjustmentAnalysisError, AnalyticalScanError) as exc:
+		typer.echo(f"Run failed: {exc}", err=True)
+		raise typer.Exit(1) from exc
+
+	manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+	history = _load_adjustment_history(
+		output_root / ticker / "03_output" / "adjustment_history.csv"
+	)
+	pending = _pending_review_entries(manifest, history)
+	if pending:
+		typer.echo(
+			f"{len(pending)} candidate(s) require human review. "
+			f"Run 'smrik-fund review {ticker}'."
+		)
+	else:
+		typer.echo("Automated path complete; no candidates require human review.")
+
+
+@app.command()
+def dcf(
+	ticker: str,
+	as_of: str = typer.Option(..., help="Information cutoff, YYYY-MM-DD."),
+	output_dir: Path = typer.Option(..., help="New development run directory."),
+	case_dir: Path | None = typer.Option(None, help="Reuse a frozen company source case."),
+	live: bool = typer.Option(False, help="Run bounded paid analyst and independent review."),
+	prior: Path | None = typer.Option(None, help="Prior independently reviewed development run."),
+	beta: float | None = typer.Option(None, help="Provisional beta revision; requires --prior."),
+	price_dir: Path | None = typer.Option(None, help="Directory containing verified Luna/Sol price snapshots."),
+	resume_from: Path | None = typer.Option(None, help="Reuse a completed analyst from a prior run; fresh review requires --live."),
+) -> None:
+	"""Build a provisional company three-statement DCF and formula-linked Excel."""
+	from smrik_fund.company_case import freeze_company, validate_case
+	from smrik_fund.company_run import run_case
+
+	source = case_dir or output_dir / "source"
+	try:
+		if not (source / "case.json").exists():
+			freeze_company(ticker, as_of, source)
+		if validate_case(source)["information_cutoff"] != as_of:
+			raise typer.BadParameter("--as-of differs from the frozen case cutoff")
+		version = run_case(ticker, source, output_dir, live=live, prior=prior, beta=beta, price_dir=price_dir, resume_from=resume_from)
+	except ValueError as exc:
+		report = {"ticker": ticker.strip().upper(), "status": "BLOCKED", "reason": str(exc), "valuation_complete": False}
+		output_dir.mkdir(parents=True, exist_ok=True)
+		report_path = output_dir / "blocked.json"
+		if not report_path.exists():
+			report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+		typer.echo(json.dumps(report, indent=2), err=True)
+		raise typer.Exit(1) from exc
+	typer.echo(json.dumps(version, indent=2))
 
 
 @app.command()

@@ -121,3 +121,63 @@ class FilingEvidenceTests(TestCase):
 			self.assertIn("search section loc(s) 12, 19", evidence["locator"])
 			self.assertIn("source text offsets", evidence["locator"])
 			self.assertEqual(evidence["query"], "A.B [x]")
+
+	def test_distinctive_phrase_keeps_note_excerpt(self) -> None:
+		class NoteFiling(Filing):
+			text_value = (
+				"Header\n"
+				"Gross profit decreased due to higher service costs, "
+				"primarily mix in the current period.\n"
+			)
+
+			def search(self, query: str, regex: bool = False) -> object:
+				assert regex is False
+				return type(
+					"Results",
+					(),
+					{
+						"sections": [
+							type("Section", (), {"loc": 4, "doc": self.text_value})()
+						]
+					},
+				)()
+
+		packet, metadata = retrieve_filing_evidence(
+			NoteFiling(), "ACME", "gross profit", ["Gross profit decreased due to"]
+		)
+		self.assertEqual(metadata["evidence_item_count"], 1)
+		self.assertIn("primarily mix", packet)
+		self.assertIn("Gross profit decreased due to", packet)
+
+	def test_common_label_overflow_keeps_bounded_note_hits(self) -> None:
+		table = "".join(f"  Gross profit                    {index}\n" for index in range(25))
+		note = (
+			"Gross profit decreased due to higher service costs. "
+			"The decrease was primarily driven by mix rather than a one-time item.\n"
+		)
+
+		class BusyFiling(Filing):
+			accession_no = "0000000000-00-000000"
+			text_url = "https://example.test/acme.txt"
+			text_value = "Header\n" + table + note
+
+			def search(self, query: str, regex: bool = False) -> object:
+				assert regex is False
+				assert query == "Gross profit"
+				return type(
+					"Results",
+					(),
+					{
+						"sections": [
+							type("Section", (), {"loc": 8, "doc": self.text_value})()
+						]
+					},
+				)()
+
+		packet, metadata = retrieve_filing_evidence(
+			BusyFiling(), "ACME", "gross profit movement", ["Gross profit"]
+		)
+		self.assertEqual(metadata["ticker"], "ACME")
+		self.assertEqual(metadata["queries"], ["Gross profit"])
+		self.assertLessEqual(metadata["evidence_item_count"], 20)
+		self.assertIn("primarily driven by mix", packet)

@@ -19,8 +19,13 @@ from ..ingestion.adjustment_analysis import AdjustmentAnalysisError, run_analyst
 from ..ingestion.analytical_scan import AnalyticalScanError, run_analytical_scan
 from ..ingestion.filing_investigation import (
 	FinancialInvestigationResult,
+	build_observed_movement,
+	extract_period_paired_disclosures,
 	investigate_finding,
+	reconcile_period_pair_bridge,
+	run_financial_investigation,
 )
+from ..ingestion.procedural_investigation import run_procedural_investigation
 from . import checks as mechanical
 from . import inputs as case_inputs
 from . import judge as judging
@@ -247,10 +252,172 @@ def _scan_workflow(
 	}
 
 
+def _frozen_packet(
+	case: dict[str, Any], repository_root: str | Path
+) -> tuple[str, Path]:
+	"""Load the case-pinned packet; source integrity is checked by the runner."""
+	path = case_inputs.resolve(repository_root, case["evidence_artifact"])
+	return path.read_text(encoding="utf-8"), path
+
+
+def _frozen_investigation_workflow(
+	case: dict[str, Any],
+	loaded: case_inputs.CaseInputs,
+	client: Any,
+	case_dir: Path,
+	repository_root: str | Path,
+) -> dict[str, Any]:
+	"""Run one unchanged investigator call against one frozen packet."""
+	packet, packet_path = _frozen_packet(case, repository_root)
+	result, metadata = run_financial_investigation(
+		case["ticker"],
+		loaded.finding,
+		loaded.pnl,
+		packet,
+		expected_filing_accession=case["accession"],
+		segments=loaded.segments,
+		client=client,
+		run_id=case["case_id"],
+	)
+	observation = build_observed_movement(
+		loaded.pnl, loaded.finding, loaded.segments
+	)
+	quantification = extract_period_paired_disclosures(
+		loaded.pnl,
+		loaded.finding,
+		packet,
+		observed_unit=case.get("observed_unit", "dollars"),
+		segments=loaded.segments,
+	)
+	reconciliation = reconcile_period_pair_bridge(
+		loaded.pnl,
+		loaded.finding,
+		packet,
+		observed_unit=case.get("observed_unit", "dollars"),
+		segments=loaded.segments,
+	)
+	payload = {
+		"status": "completed",
+		"arm": "one_shot",
+		"metadata": metadata,
+		"finding": loaded.finding.model_dump(mode="json"),
+		"observed_movement": observation,
+		"evidence_path": str(packet_path),
+		"investigation": {
+			"metadata": metadata,
+			"result": result.model_dump(mode="json"),
+		},
+		"quantified_disclosures": quantification,
+		"reconciliation": reconciliation,
+	}
+	trace = {
+		"arm": "one_shot",
+		"run_id": case["case_id"],
+		"observation": observation,
+		"evidence_identity": {
+			"path": str(packet_path),
+			"sha256": case.get("evidence_sha256"),
+		},
+		"deterministic_quantification": quantification,
+		"deterministic_reconciliation": reconciliation,
+		"final_result": result.model_dump(mode="json"),
+		"call_count": 1,
+	}
+	trace_path = case_dir / "trace.json"
+	trace_path.write_text(json.dumps(trace, indent=2) + "\n", encoding="utf-8")
+	return {
+		"status": "COMPLETED",
+		"payload": payload,
+		"checks": [
+			mechanical.check("result_schema", "PASS", critical=True),
+			mechanical.evidence_refs(result, packet),
+			mechanical.numeric_grounding(result, loaded.pnl, loaded.segments),
+			mechanical.amount_basis(result),
+			mechanical.product_validator(
+				result, packet, _allowed_periods(payload)
+			),
+			*mechanical.diagnostics(result, payload),
+		],
+		"artifact": trace_path,
+		"packet": packet,
+		"judge_output": {
+			"result": result.model_dump(mode="json"),
+			"quantified_disclosures": quantification,
+			"reconciliation": reconciliation,
+		},
+	}
+
+
+def _procedural_workflow(
+	case: dict[str, Any],
+	loaded: case_inputs.CaseInputs,
+	client: Any,
+	case_dir: Path,
+	repository_root: str | Path,
+) -> dict[str, Any]:
+	"""Run the bounded decomposition -> assessment -> conclusion experiment."""
+	packet, packet_path = _frozen_packet(case, repository_root)
+	result, metadata, trace = run_procedural_investigation(
+		case["ticker"],
+		loaded.finding,
+		loaded.pnl,
+		packet,
+		expected_filing_accession=case["accession"],
+		segments=loaded.segments,
+		client=client,
+		observed_unit=case.get("observed_unit", "dollars"),
+		run_id=case["case_id"],
+		trace_path=case_dir / "trace.json",
+	)
+	trace["evidence_identity"]["path"] = str(packet_path)
+	(Path(case_dir) / "trace.json").write_text(
+		json.dumps(trace, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+	)
+	quantification = trace["deterministic_quantification"]
+	reconciliation = trace["deterministic_reconciliation"]
+	payload = {
+		"status": "completed",
+		"arm": "procedural",
+		"metadata": metadata,
+		"finding": loaded.finding.model_dump(mode="json"),
+		"observed_movement": trace["observation"],
+		"evidence_path": str(packet_path),
+		"investigation": {
+			"metadata": metadata,
+			"result": result.model_dump(mode="json"),
+		},
+		"quantified_disclosures": quantification,
+		"reconciliation": reconciliation,
+	}
+	return {
+		"status": "COMPLETED",
+		"payload": payload,
+		"checks": [
+			mechanical.check("result_schema", "PASS", critical=True),
+			mechanical.evidence_refs(result, packet),
+			mechanical.numeric_grounding(result, loaded.pnl, loaded.segments),
+			mechanical.amount_basis(result),
+			mechanical.product_validator(
+				result, packet, _allowed_periods(payload)
+			),
+			*mechanical.diagnostics(result, payload),
+		],
+		"artifact": case_dir / "trace.json",
+		"packet": packet,
+		"judge_output": {
+			"result": result.model_dump(mode="json"),
+			"quantified_disclosures": quantification,
+			"reconciliation": reconciliation,
+		},
+	}
+
+
 # Static dispatch: a plain mapping of workflow name to function. No registry,
 # no reflection, no plugin layer.
 _WORKFLOWS = {
 	"filing": _filing_workflow,
+	"one_shot": _frozen_investigation_workflow,
+	"procedural": _procedural_workflow,
 	"analyst": _analyst_workflow,
 	"scan": _scan_workflow,
 }

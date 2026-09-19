@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-SUITES = ("development", "regression", "holdout")
+SUITES = ("development", "regression", "holdout", "procedural")
 
 JUDGE_MODEL = "gpt-5.6-sol"
 JUDGE_REASONING_EFFORT = "high"
@@ -31,6 +31,21 @@ _SOURCE_MANIFEST_SHA256 = (
 )
 _ACCESSION = "0001193125-26-323660"
 _PERIOD = "2026-06-30"
+
+_OPENAI_EVIDENCE = (
+	"data/live-movement-explanation-retrieval-i1/MSFT/03_output/evidence/"
+	"finding_01_movement-i1-1-control.md"
+)
+_OPENAI_EVIDENCE_SHA256 = (
+	"63685B3412F9976578474976320B79F2D333E449B4332F28E99BC99F8F86A694"
+)
+_OPEX_EVIDENCE = (
+	"data/live-movement-explanation-retrieval-r1/MSFT/03_output/evidence/"
+	"finding_03_20260828T144057144100Z.md"
+)
+_OPEX_EVIDENCE_SHA256 = (
+	"A65016291E2361DB49B9AC9FFE59C9523B4DBC982AC7AC45BF18A64D843AC57A"
+)
 
 _SEGMENT_ANALYTICS = (
 	"data/live-segment-enrichment-i1/MSFT/03_output/segment_analytics.csv"
@@ -156,7 +171,129 @@ def _rubric(*dimensions: str, acceptance: str) -> dict[str, Any]:
 	return {"dimensions": list(dimensions), "acceptance": acceptance}
 
 
+def _procedural_case(
+	*,
+	case_id: str,
+	arm: str,
+	input_root: str,
+	scan_artifact: str,
+	scan_sha256: str,
+	finding_rank: int,
+	finding_refs: list[str],
+	evidence_artifact: str,
+	evidence_sha256: str,
+	rubric: dict[str, Any],
+) -> dict[str, Any]:
+	"""Build one arm of a frozen, paired procedural experiment."""
+	return {
+		"case_id": case_id,
+		"suites": ["procedural"],
+		**_msft(input_root),
+		"workflow": arm,
+		"arm": arm,
+		"observed_unit": "dollars",
+		"evidence_artifact": evidence_artifact,
+		"evidence_sha256": evidence_sha256,
+		"scan_artifact": scan_artifact,
+		"scan_sha256": scan_sha256,
+		"finding_rank": finding_rank,
+		"finding_refs": finding_refs,
+		"rubric": rubric,
+	}
+
+
+_OPENAI_RUBRIC = _rubric(
+	"movement_scope",
+	"quantified_disclosures",
+	"residual_without_plug",
+	"evidence_grounding",
+	acceptance=(
+		"Preserve the +15.598bn movement, the +6.5bn/-4.8bn disclosure, "
+		"the +11.3bn known contribution, and the +4.298bn unresolved "
+		"remainder."
+	),
+)
+_OPEX_RUBRIC = _rubric(
+	"movement_scope",
+	"multiple_qualitative_drivers",
+	"no_category_allocation",
+	"evidence_grounding",
+	acceptance=(
+		"Retain at least three qualitative operating-expense drivers with "
+		"null amounts and no unsupported category allocation."
+	),
+)
+
+
 _CASES: tuple[dict[str, Any], ...] = (
+	_procedural_case(
+		case_id="msft_openai_nonoperating_quantified_one_shot",
+		arm="one_shot",
+		input_root="data/live-closed-world-proof-r1",
+		scan_artifact=(
+			"data/live-closed-world-proof-r1/MSFT/03_output/analysis/"
+			"analytical_scan_20260827T175543203180Z.json"
+		),
+		scan_sha256=(
+			"D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4"
+		),
+		finding_rank=1,
+		finding_refs=["L12", "L13", "L15"],
+		evidence_artifact=_OPENAI_EVIDENCE,
+		evidence_sha256=_OPENAI_EVIDENCE_SHA256,
+		rubric=_OPENAI_RUBRIC,
+	),
+	_procedural_case(
+		case_id="msft_openai_nonoperating_quantified_procedural",
+		arm="procedural",
+		input_root="data/live-closed-world-proof-r1",
+		scan_artifact=(
+			"data/live-closed-world-proof-r1/MSFT/03_output/analysis/"
+			"analytical_scan_20260827T175543203180Z.json"
+		),
+		scan_sha256=(
+			"D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4"
+		),
+		finding_rank=1,
+		finding_refs=["L12", "L13", "L15"],
+		evidence_artifact=_OPENAI_EVIDENCE,
+		evidence_sha256=_OPENAI_EVIDENCE_SHA256,
+		rubric=_OPENAI_RUBRIC,
+	),
+	_procedural_case(
+		case_id="msft_operating_expense_multi_driver_one_shot",
+		arm="one_shot",
+		input_root="data/live-closed-world-proof-r2",
+		scan_artifact=(
+			"data/live-closed-world-proof-r2/MSFT/03_output/analysis/"
+			"analytical_scan_20260827T190654525200Z.json"
+		),
+		scan_sha256=(
+			"666CFFAE478CEAD9D3FF6C17E6E32CFD5EA999B9388C4B515DD07544B2832F40"
+		),
+		finding_rank=3,
+		finding_refs=["L01", "L08", "L09", "L10", "L11"],
+		evidence_artifact=_OPEX_EVIDENCE,
+		evidence_sha256=_OPEX_EVIDENCE_SHA256,
+		rubric=_OPEX_RUBRIC,
+	),
+	_procedural_case(
+		case_id="msft_operating_expense_multi_driver_procedural",
+		arm="procedural",
+		input_root="data/live-closed-world-proof-r2",
+		scan_artifact=(
+			"data/live-closed-world-proof-r2/MSFT/03_output/analysis/"
+			"analytical_scan_20260827T190654525200Z.json"
+		),
+		scan_sha256=(
+			"666CFFAE478CEAD9D3FF6C17E6E32CFD5EA999B9388C4B515DD07544B2832F40"
+		),
+		finding_rank=3,
+		finding_refs=["L01", "L08", "L09", "L10", "L11"],
+		evidence_artifact=_OPEX_EVIDENCE,
+		evidence_sha256=_OPEX_EVIDENCE_SHA256,
+		rubric=_OPEX_RUBRIC,
+	),
 	{
 		"case_id": "msft_segment_growth_mix",
 		"suites": ["development"],

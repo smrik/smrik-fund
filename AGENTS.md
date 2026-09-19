@@ -1,5 +1,23 @@
 # AGENTS.md
 
+## Current build authority — 2026-09-05
+
+Patrik explicitly authorized the full `docs/AI_FUND_BUILD_GUIDE.md` implementation.
+That guide is the main product/architecture/acceptance authority for the current
+three-statement DCF build, superseding the historical Part F-only scope and
+conflicting calculation/state rules below. Follow its P0–P12 package gates.
+Preserve financial integrity, unrelated dirty work, and the Git/security rules.
+The current package checklist is at the top of `docs/V1_STATUS.md`.
+
+## Development E2E assumptions — authorized 2026-09-10
+
+During development/end-to-end testing, select reasonable provisional financial
+policies, estimates and simplifications autonomously so testing can advance.
+Label them, preserve reported source values, test accounting mechanics and use
+independent analytical review. Do not pause for Patrik to choose routine model
+defaults. His financial-policy approval belongs to review of the working system;
+development acceptance is not human financial/investment approval.
+
 ## Project goal
 
 Build the smallest working V1 of the AI financial-analysis pipeline.

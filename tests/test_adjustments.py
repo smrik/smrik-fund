@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 import pandas as pd
 
 from smrik_fund.ingestion.adjustments import (
+    append_withdrawal,
     apply_adjustments,
     derive_line_delta,
     resolve_current_adjustments,
 )
+from smrik_fund.main import withdraw_adjustment
 
 PERIODS = (
     "2025-06-30 (FY)",
@@ -182,6 +187,122 @@ class ResolveCurrentAdjustmentsTests(TestCase):
         current = resolve_current_adjustments(history)
 
         self.assertEqual(current[["adjustment_id", "version"]].values.tolist(), [["A0001", 1]])
+
+    def test_explicit_withdrawal_ends_effect_and_reauthorization_reuses_id(self) -> None:
+        approved = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        approved["authority"] = "human-approved"
+        history = pd.DataFrame([approved])
+
+        withdrawn = append_withdrawal(
+            history, "A0001", reason="human policy changed", run_id="withdraw-1"
+        )
+        self.assertTrue(resolve_current_adjustments(withdrawn).empty)
+        self.assertEqual(withdrawn.iloc[-1]["status"], "withdrawn")
+        self.assertEqual(withdrawn.iloc[-1]["authority"], "human-approved")
+        provisional = dict(approved)
+        provisional.update(
+            {
+                "version": 3,
+                "authority": "system-reviewed-provisional",
+                "run_id": "system-3",
+            }
+        )
+        self.assertTrue(
+            resolve_current_adjustments(
+                pd.concat([withdrawn, pd.DataFrame([provisional])], ignore_index=True)
+            ).empty
+        )
+
+        reauthorized = dict(approved)
+        reauthorized.update({"version": 3, "run_id": "approve-3"})
+        final_history = pd.concat(
+            [withdrawn, pd.DataFrame([reauthorized])], ignore_index=True
+        )
+        current = resolve_current_adjustments(final_history)
+        self.assertEqual(current[["adjustment_id", "version"]].values.tolist(), [["A0001", 3]])
+        adjusted = apply_adjustments(make_pnl(), final_history)
+        self.assertEqual(
+            adjusted.loc[adjusted["label"].eq("Cost of revenue"), PERIODS[1]].iloc[0],
+            100.0,
+        )
+
+    def test_system_provisional_or_unknown_approval_cannot_replace_human_approval(self) -> None:
+        human = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        human["authority"] = "human-approved"
+        provisional = dict(human)
+        provisional.update(
+            {"version": 2, "authority": "system-reviewed-provisional", "run_id": "system-2"}
+        )
+        unknown = dict(human)
+        unknown.update({"version": 3, "authority": None, "run_id": "legacy-3"})
+        current = resolve_current_adjustments(
+            pd.DataFrame([human, provisional, unknown])
+        )
+        self.assertEqual(current[["adjustment_id", "version"]].values.tolist(), [["A0001", 1]])
+        self.assertEqual(current.iloc[0]["_authority_status"], "human-approved")
+
+    def test_system_reviewed_provisional_is_effective_when_no_human_decision_exists(self) -> None:
+        provisional = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        provisional["authority"] = "system-reviewed provisional decision"
+        current = resolve_current_adjustments(pd.DataFrame([provisional]))
+        self.assertEqual(current["version"].tolist(), [1])
+        self.assertEqual(current.iloc[0]["_authority_status"], "system-reviewed-provisional")
+
+    def test_new_source_context_marks_old_effect_stale_and_blocks_application(self) -> None:
+        old = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        old.update({"authority": "human-approved", "source_snapshot_id": "old-source"})
+        new_proposal = dict(old)
+        new_proposal.update(
+            {
+                "version": 2,
+                "status": "proposed",
+                "source_snapshot_id": "new-source",
+                "run_id": "proposal-2",
+            }
+        )
+        history = pd.DataFrame([old, new_proposal])
+        current = resolve_current_adjustments(history)
+        self.assertEqual(current.iloc[0]["_source_applicability"], "needs_reassessment")
+        with self.assertRaisesRegex(ValueError, "reassessment"):
+            apply_adjustments(make_pnl(), history)
+
+    def test_explicit_original_source_survives_rejected_replacement(self) -> None:
+        old = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        old.update({"authority": "human-approved", "source_snapshot_id": "source-A"})
+        rejected = dict(old)
+        rejected.update(
+            {
+                "version": 2,
+                "status": "rejected",
+                "source_snapshot_id": "source-B",
+                "run_id": "rejected-2",
+            }
+        )
+        history = pd.DataFrame([old, rejected])
+
+        current = resolve_current_adjustments(history, source_snapshot_id="source-A")
+        reassessed = resolve_current_adjustments(history, source_snapshot_id="source-B")
+
+        self.assertEqual(current.iloc[0]["_source_applicability"], "current")
+        self.assertEqual(reassessed.iloc[0]["_source_applicability"], "needs_reassessment")
+
+    def test_withdraw_write_failure_preserves_history_bytes(self) -> None:
+        approved = adjustment("A0001", 1, "Cost of revenue", PERIODS[1], 400)
+        approved["authority"] = "human-approved"
+        with TemporaryDirectory() as temporary_directory:
+            history_path = Path(temporary_directory) / "adjustment_history.csv"
+            pd.DataFrame([approved]).to_csv(history_path, index=False)
+            before = history_path.read_bytes()
+            with (
+                patch("smrik_fund.ingestion.adjustments.os.replace", side_effect=OSError),
+                self.assertRaises(OSError),
+            ):
+                withdraw_adjustment(
+                    history_path,
+                    "A0001",
+                    reason="test write failure",
+                )
+            self.assertEqual(history_path.read_bytes(), before)
 
 
 class ApplyAdjustmentsTests(TestCase):
