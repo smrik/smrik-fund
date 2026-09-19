@@ -80,6 +80,12 @@ try {
         }
     }
     if ($maximum -gt 0.000001) { throw 'Native Excel statement values differ from formula engine' }
+    $operatingChecked=0
+    foreach ($item in $snapshot.operating_checks) {
+        $actual=$book.Worksheets.Item($item.sheet).Range($item.cell).Value2
+        if ($null -eq $actual -or [Math]::Abs([double]$actual-[double]$item.value) -gt 0.000001) { throw "Operating build mismatch: $($item.sheet)!$($item.cell)" }
+        $operatingChecked++
+    }
     $historyChecked=0
     foreach ($item in $snapshot.historical_checks) {
         $actual=$book.Worksheets.Item($item.sheet).Range($item.cell).Value2
@@ -101,7 +107,7 @@ try {
             }
         } catch { }
         $totals=switch ($name) {
-            'Income' { @(8,19,27,31) }
+            'Income' { @(8,14,26,32,38,47,51) }
             'BalanceSheet' { @(15,24,29,32) }
             'CashFlow' { @(14,20,25,30,33,35) }
             'Assets' { @(14,22) }
@@ -122,7 +128,7 @@ try {
     $income=$book.Worksheets.Item('Income')
     $noteRow=$income.UsedRange.Rows.Count
     $income.Range($income.Cells.Item($noteRow,1),$income.Cells.Item($noteRow,$income.UsedRange.Columns.Count)).Merge() | Out-Null
-    $income.Rows.Item($noteRow).RowHeight=44
+    $income.Rows.Item($noteRow).RowHeight=68
     foreach ($name in @('Income','Assets','WorkingCapital','CashFlow')) {
         $sheet=$book.Worksheets.Item($name)
         foreach ($driver in $snapshot.presentation.drivers.PSObject.Properties[$name].Value.PSObject.Properties) {
@@ -132,8 +138,9 @@ try {
             $range.Font.Italic=$true
         }
     }
-    $book.Worksheets.Item('Income').Rows.Item(20).NumberFormat='0.0%'
-    $book.Worksheets.Item('Income').Rows.Item(32).NumberFormat='0.0%'
+    foreach ($r in $snapshot.presentation.income_percent_rows) {
+        $income.Rows.Item([int]$r).NumberFormat='0.0%'
+    }
     $book.Worksheets.Item('DCF').Rows.Item(37).NumberFormat='0.0%'
     $dcf.Rows.Item(25).WrapText=$true
     $dcf.Rows.Item(25).RowHeight=42
@@ -154,6 +161,26 @@ try {
     $betaCell.Value2 = $priorBeta
     $excel.CalculateFullRebuild()
     if ([Math]::Abs([double]$dcf.Range('B19').Value2-$value) -gt 0.000001) { throw 'Native restoration changed value' }
+    $nativeCostEdit='NOT_APPLICABLE'
+    if ($null -ne $snapshot.input_rows.cogs_ratio) {
+        $costCell=$inputs.Cells.Item([int]$snapshot.input_rows.cogs_ratio,2)
+        $priorCost=[double]$costCell.Value2
+        $forecastColumn=[int]$snapshot.presentation.history_columns+3
+        $baseEbit=[double]$income.Cells.Item(38,$forecastColumn).Value2
+        $revenue=[double]$income.Cells.Item(8,$forecastColumn).Value2
+        $costCell.Value2=$priorCost+0.01
+        $excel.CalculateFullRebuild()
+        $newEbit=[double]$income.Cells.Item(38,$forecastColumn).Value2
+        if ([Math]::Abs($baseEbit-$newEbit-$revenue*0.01) -gt 0.000001 -or $dcf.Range('B20').Value2 -ne 'EDITED_UNREVIEWED' -or [double]$dcf.Range('B19').Value2 -ge $value) { throw 'Native expense driver propagation failed' }
+        foreach ($item in $snapshot.historical_checks) {
+            $actual=$book.Worksheets.Item($item.sheet).Range($item.cell).Value2
+            if ($null -eq $actual -or [Math]::Abs([double]$actual-[double]$item.value) -gt 0.000001) { throw 'Expense edit changed history' }
+        }
+        $costCell.Value2=$priorCost
+        $excel.CalculateFullRebuild()
+        if ([Math]::Abs([double]$dcf.Range('B19').Value2-$value) -gt 0.000001) { throw 'Expense restoration changed value' }
+        $nativeCostEdit='PASS'
+    }
     # Lead with the analytical outputs; source and audit tabs remain accessible.
     foreach ($name in @('Sensitivity','DCF','WorkingCapital','Assets','CashFlow','BalanceSheet','Income','Review')) {
         $book.Worksheets.Item($name).Move($book.Worksheets.Item(1))
@@ -162,7 +189,7 @@ try {
     $excel.ActiveWindow.ScrollRow = 1
     $excel.ActiveWindow.ScrollColumn = 1
     $book.Save()
-    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; historical_values_checked=$historyChecked; formula_errors=$formulaErrors.Count; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
+    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; operating_values_checked=$operatingChecked; historical_values_checked=$historyChecked; formula_errors=$formulaErrors.Count; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; native_cost_edit=$nativeCostEdit; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
 } finally {
     if ($null -ne $book) { $book.Close($false) }
     $excel.Quit()

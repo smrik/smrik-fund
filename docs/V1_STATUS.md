@@ -2,6 +2,26 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Operating cost drivers - verified 2026-09-19
+
+- Separate COGS/SG&A/R&D forecasts require reconciled FY/YTD expense composition;
+  raw signs and explicit conversions are preserved. Incomplete detail keeps an
+  explained aggregate forecast. No residual cost driver is invented.
+- Income shows gross profit, EBITDA, margins and local cost formulas. Source-bound
+  ratios are editable in Inputs or the free assumptions JSON; edits propagate
+  through the linked statements and DCF and invalidate review.
+- BBWI, NVDA and COST passed detailed-cost and one-point cost-change tests.
+  LULU, HPQ and GOOGL passed explicit aggregate fallback tests. Existing AAPL,
+  AMZN, KO and HD accounting regressions passed too.
+- New BBWI output: `data/workspace/runs/20260919-bbwi-cost-drivers/reviewed/BBWI.xlsx`.
+  Base forecast unchanged ($41.4706/share). Native Excel: 572 forecast, 90 cost-build
+  and 176 historical values; zero formula errors; beta/cost edits restored exactly.
+  All eight artifact/source audit checks passed. No paid calls.
+- 56 unique relevant tests pass across the regression run and corrected focused
+  follow-up; Ruff and JS syntax pass. [Model guide and scope](FINANCIAL_HISTORY.md).
+- Current/deferred tax, financing, working-capital disaggregation and depreciation
+  vintages remain subsequent financial-method work.
+
 ## Financial history and statement formulas - verified 2026-09-19
 
 - New captures request five annual filings plus the latest subsequent interim.

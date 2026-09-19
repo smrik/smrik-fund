@@ -23,17 +23,17 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   const locations = {
     4: ["Income", 5],
     5: ["DCF", 44],
-    6: ["Income", 40],
-    7: ["Income", 42],
+    6: ["Income", 62],
+    7: ["Income", 64],
     8: ["Income", 8],
-    9: ["Income", 45],
-    10: ["Income", 47],
-    11: ["Income", 49],
-    12: ["Income", 11],
-    13: ["Income", 14],
-    14: ["Income", 16],
-    15: ["Income", 17],
-    16: ["Income", 19],
+    9: ["Income", 11],
+    10: ["Income", 20],
+    11: ["Income", 17],
+    12: ["Income", 26],
+    13: ["Income", 29],
+    14: ["Income", 35],
+    15: ["Income", 36],
+    16: ["Income", 38],
     17: ["Assets", 8],
     18: ["Assets", 10],
     19: ["Assets", 11],
@@ -52,11 +52,11 @@ export async function buildStatements({ wb, table, model, rows, I }) {
     32: ["BalanceSheet", 21],
     33: ["WorkingCapital", 23],
     34: ["WorkingCapital", 25],
-    35: ["Income", 22],
-    36: ["Income", 24],
-    37: ["Income", 27],
-    38: ["Income", 28],
-    39: ["Income", 31],
+    35: ["Income", 41],
+    36: ["Income", 44],
+    37: ["Income", 47],
+    38: ["Income", 48],
+    39: ["Income", 51],
     40: ["CashFlow", 11],
     41: ["CashFlow", 24],
     42: ["CashFlow", 14],
@@ -76,7 +76,7 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   };
   if (aggregate) {
     locations[6] = ["Income", 8];
-    locations[9] = ["Income", 11];
+    locations[9] = ["Income", 26];
   }
   const constant = (r) => aggregate && [7, 10, 11].includes(r);
   const address = (i, r) =>
@@ -296,17 +296,17 @@ export async function buildStatements({ wb, table, model, rows, I }) {
     const a = actualMap[metric];
     if (a) actual(sheet, r, rows[Number(metric) - 1][0], ...a);
   }
-  actual("Income", 28, "Tax expense (checked earnings bridge)", "tax_expense");
+  actual("Income", 48, "Tax expense (checked earnings bridge)", "tax_expense");
   put(
     "Income",
-    28,
+    48,
     "Tax expense (checked earnings bridge)",
     n + 1,
     F(I("ttm_tax")),
   );
   put(
     "Income",
-    22,
+    41,
     "Interest expense (actuals retain reported sign)",
     0,
     "Interest expense (actuals retain reported sign)",
@@ -327,17 +327,17 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   const drivers = {
     Income: {
       9: ["Revenue growth", I("products_growth")],
-      12: [
+      27: [
         "Operating expenses / revenue",
         `${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`,
       ],
-      15: [
+      30: [
         "Embedded reported D&A / revenue",
         `${I("ttm_da")}/${I("ttm_revenue")}`,
       ],
-      23: ["Debt interest rate", I("debt_rate")],
-      25: ["Investment yield", I("risk_free")],
-      29: [
+      42: ["Debt interest rate", I("debt_rate")],
+      45: ["Investment yield", I("risk_free")],
+      49: [
         "Tax rate",
         model.normalized_tax_rate !== undefined
           ? I("normalized_tax_rate")
@@ -374,22 +374,22 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   };
   const driverReferences = {
     6: [[I("products_growth"), "Income", 9]],
-    9: [[`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`, "Income", 12]],
-    12: [[`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`, "Income", 12]],
-    13: [[`${I("ttm_da")}/${I("ttm_revenue")}`, "Income", 15]],
+    9: [[`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`, "Income", 27]],
+    12: [[`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`, "Income", 27]],
+    13: [[`${I("ttm_da")}/${I("ttm_revenue")}`, "Income", 30]],
     19: [[`(-${I("ttm_capex_cash")})/${I("ttm_revenue")}`, "Assets", 12]],
     20: [[I("ppe_life"), "Assets", 16]],
     23: [[I("intangible_additions_ratio"), "Assets", 20]],
     24: [[I("intangible_life"), "Assets", 24]],
-    35: [[I("debt_rate"), "Income", 23]],
-    36: [[I("risk_free"), "Income", 25]],
+    35: [[I("debt_rate"), "Income", 42]],
+    36: [[I("risk_free"), "Income", 45]],
     38: [
       [
         model.normalized_tax_rate !== undefined
           ? I("normalized_tax_rate")
           : `(${I("ttm_tax")}/${I("ttm_pretax")})`,
         "Income",
-        29,
+        49,
       ],
     ],
     40: [[`${I("ttm_sbc")}/${I("ttm_revenue")}`, "CashFlow", 12]],
@@ -462,8 +462,8 @@ export async function buildStatements({ wb, table, model, rows, I }) {
       );
     }
   };
-  ratio("Income", 20, "EBIT margin", 19, 8);
-  ratio("Income", 32, "Net income margin", 31, 8);
+  ratio("Income", 39, "EBIT margin", 38, 8);
+  ratio("Income", 52, "Net income margin", 51, 8);
   for (let j = 1; j < n; j++) {
     const c = letter(j + 1),
       prior = letter(j);
@@ -478,8 +478,8 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   for (let j = 1; j <= n + 1; j++) {
     const c = letter(j);
     for (const [r, a, b] of [
-      [12, 11, 8],
-      [29, 28, 27],
+      [27, 26, 8],
+      [49, 48, 47],
     ])
       put(
         "Income",
@@ -575,31 +575,13 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   }
   actual(
     "Income",
-    35,
-    "Reported cost of revenue (no separate forecast allocation)",
-    "cost_of_revenue",
-  );
-  actual(
-    "Income",
-    36,
-    "Reported gross profit (no separate forecast allocation)",
-    "gross_profit",
-  );
-  actual(
-    "Income",
-    37,
-    "Reported SG&A (no separate forecast allocation)",
-    "sga_reported",
-  );
-  actual(
-    "Income",
-    38,
+    54,
     "Reported discontinued-operations income",
     "discontinued_income",
   );
   actual(
     "Income",
-    39,
+    55,
     "Reported continuing-operations income",
     "continuing_income",
   );
@@ -753,7 +735,81 @@ export async function buildStatements({ wb, table, model, rows, I }) {
       F(`IF(ISNUMBER(Assets!${c}11),Assets!${c}11,"")`),
     );
   }
-  grids.Income[21][0] = "Interest expense (actuals: reported sign)";
+  grids.Income[40][0] = "Interest expense (actuals: reported sign)";
+  const costRows = { cogs: 11, sga: 17, research: 20 };
+  const components = model.operating_costs?.components ?? [];
+  for (const [key, r] of Object.entries(costRows)) {
+    const component = components.find((x) => x.key === key);
+    const label =
+      key === "cogs" ? "Cost of revenue" : key === "sga" ? "SG&A" : "R&D";
+    actual("Income", r, label, `cost_${key}`);
+    ratio("Income", r + 1, `${label} / revenue`, r, 8);
+    // No component means no separately supported forecast, not a reported zero.
+    if (component) {
+      drivers.Income[r + 1] = [`${label} / revenue`, I(component.control)];
+      for (const p of forecast) {
+        const c = column(p.index),
+          j = firstForecast + p.index - (hasStub ? 1 : 0);
+        put("Income", r + 1, `${label} / revenue`, j, F(I(component.control)));
+        put("Income", r, label, j, F(`${c}8*${c}${r + 1}`));
+      }
+    }
+  }
+  for (let j = 1; j < headings.length; j++) {
+    const c = letter(j);
+    put(
+      "Income",
+      14,
+      "Gross profit before D&A replacement",
+      j,
+      F(`IF(COUNT(${c}8,${c}11)=2,${c}8-${c}11,"")`),
+    );
+    put(
+      "Income",
+      32,
+      "EBITDA proxy (EBIT + total D&A)",
+      j,
+      j <= n + 1
+        ? F(`IF(COUNT(${c}38,Assets!${c}6)=2,${c}38+Assets!${c}6,"")`)
+        : F(`${c}8-${c}26+${c}29`),
+    );
+  }
+  for (const p of forecast) {
+    const c = column(p.index),
+      j = firstForecast + p.index - (hasStub ? 1 : 0);
+    if (components.length) {
+      put(
+        "Income",
+        26,
+        "Total costs before D&A replacement",
+        j,
+        F(components.map((x) => `${c}${costRows[x.key]}`).join("+")),
+      );
+      put("Income", 27, "Total costs / revenue", j, F(`${c}26/${c}8`));
+    } else if (aggregate) {
+      put(
+        "Income",
+        23,
+        "Aggregate costs (separate drivers unavailable)",
+        j,
+        F(`${c}8*${c}24`),
+      );
+      put(
+        "Income",
+        24,
+        "Aggregate costs / revenue",
+        j,
+        F(`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`),
+      );
+      put("Income", 26, "Total costs before D&A replacement", j, F(`${c}23`));
+    }
+    put("Income", 38, "EBIT", j, F(`${c}32-${c}35-${c}36`));
+  }
+  ratio("Income", 15, "Gross margin before D&A replacement", 14, 8);
+  ratio("Income", 33, "EBITDA margin", 32, 8);
+  const incomePercentRows = [
+    9, 12, 15, 18, 21, 24, 27, 30, 33, 39, 42, 45, 49, 52,
+  ];
   grids.CashFlow[32][0] = "Cash FCF (CFO + CFI)";
   actual("CashFlow", 9, "Depreciation and amortization", "da");
   for (let j = 1; j < headings.length; j++) put("CashFlow", 10, "", j, null);
@@ -768,7 +824,8 @@ export async function buildStatements({ wb, table, model, rows, I }) {
   grids.Income.push(
     [],
     [
-      "Forecast basis: revenue growth applies to the preceding full fiscal year. The first forecast uses current YTD plus the separately calculated Stub remainder. Expense forecasts remain consolidated; historical COGS/SG&A detail is not silently projected.",
+      "Revenue grows from the preceding fiscal year; first full year uses YTD + Stub. Gross profit retains embedded D&A ratios; total D&A is replaced once below EBITDA. SBC remains expensed. EBITDA uses the disclosed D&A aggregate as a proxy; no issuer-adjusted EBITDA is claimed. " +
+        (model.operating_costs?.reason ?? "Legacy expense method."),
     ],
   );
   for (const [name, g] of Object.entries(grids))
@@ -786,6 +843,7 @@ export async function buildStatements({ wb, table, model, rows, I }) {
     ttm,
     locations,
     drivers,
+    incomePercentRows,
     hasStub,
     historyColumns: n,
   };

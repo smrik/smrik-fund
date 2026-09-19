@@ -41,22 +41,57 @@ period, source URL and conversion to millions. Derived groups have explicit
 calculation bases. Historical NWC movements do not claim to reconcile reported
 CFO. Cash FCF in this model means CFO + CFI.
 
-The forecast still uses consolidated operating expenses. Historical COGS/SG&A
-detail is shown where available, but no separate future allocation is invented.
-Other existing development assumptions remain provisional.
+The operating forecast uses separate COGS, SG&A and R&D ratios when the available
+components reconcile to EBIT in every FY/YTD period. A disclosed gross-profit
+subtotal must also reconcile. Missing, ambiguous or incomplete detail selects
+the aggregate expense method with an explicit reason; no residual cost is made
+into a forecast driver. Reported signs remain in Evidence; expense magnitudes
+and their sign conversions are recorded separately.
+
+Income now shows revenue, COGS, gross profit, SG&A/R&D, total costs, embedded D&A,
+EBITDA, scheduled D&A, EBIT, taxes and net income. Ratios sit beside the costs.
+Blue `cogs_ratio`, `sga_ratio` and `research_ratio` cells in Inputs are editable
+where supported; these keys also work in the existing free operator-assumptions
+JSON. Existing assumption files inherit the new ratios from reconciled TTM.
+Unsupported controls are rejected. Edits invalidate the attached review.
+
+Gross profit retains the historical embedded-D&A allocation. The model removes
+aggregate D&A once before EBITDA and deducts scheduled depreciation/amortization
+once afterwards. It does not claim to know the split of D&A between cost lines.
+EBITDA is an EBIT-plus-disclosed-D&A proxy, not issuer-adjusted EBITDA. SBC remains
+expensed for valuation. These development policies remain provisional.
 
 The rebuilt workbook is at:
-data/workspace/runs/20260919-bbwi-history-r3/reviewed/BBWI.xlsx
+data/workspace/runs/20260919-bbwi-cost-drivers/reviewed/BBWI.xlsx
 
 Its 572 forecast values match the preceding BBWI model within tolerance, and its
 provisional value remains $41.4706/share. Native Excel checked those values plus
-161 historical values, found zero formula errors and passed beta edit/restoration.
-The source/workbook audit passed eight checks. No paid calls were made.
+90 operating-build values and 176 historical values, found zero formula errors
+and passed beta and cost-driver edits/restoration. All eight source/workbook audit
+checks passed. No paid calls were made.
+
+| USD millions | TTM | FY2027 forecast |
+| --- | ---: | ---: |
+| Revenue | 7,209.00 | 6,980.21 |
+| Cost of revenue | 4,028.00 | 3,900.16 |
+| SG&A | 1,975.00 | 1,912.32 |
+| EBITDA proxy | 1,452.00 | 1,405.92 |
+| EBIT | 1,206.00 | 1,244.47 |
+
+TTM expense ratios: COGS 55.8746%, SG&A 27.3963%. Increasing COGS by one
+percentage point reduces FY2027 EBIT by $69.80m and changes cash flow, balance
+sheet and DCF. Historical observations remain unchanged.
+
+Frozen-case tests support separate costs for BBWI, NVDA and COST. LULU, HPQ and
+GOOGL retain aggregate expenses because their selected face components are
+incomplete or do not reconcile. The broader existing tests also cover AAPL,
+AMZN, KO and HD. This is tested coverage, not a claim of universal modeling.
 
 ## Code map
 
 - company_case.py freezes the annual and interim filings.
 - company_history.py selects annual observations and source bindings.
+- company_operating.py checks expense composition and records sign conversions.
 - portable_model.py attaches history to the current financial model.
 - company-workbook.mjs authors forecast equations, valuation and checks.
 - company-statements.mjs places equations on their statements and aligns periods.
@@ -84,3 +119,18 @@ separate retained-earnings/share-capital schedules. Those require explicit
 issuer-specific drivers and policies. The current financing and expense
 simplifications remain labeled; the reference's company-specific assumptions
 are not copied into other companies. No reference workbook was modified.
+
+
+## Verification for the operating-cost increment
+
+`pytest -q tests/test_company_operating.py tests/test_company_history.py
+ tests/test_company_model.py tests/test_portable_model.py` produced 54 passes and
+one outdated test assertion. The corrected sign-preservation assertion and three
+other pure expense tests then passed (`-k 'not real_cost'`). There are 56 unique
+passing tests after adding annual-only/control-bound coverage. No unresolved
+failures. Ruff, JavaScript syntax and whitespace checks pass. Native proof and
+source audit are beside the workbook; the exported Income and DCF were rendered
+and visually inspected.
+
+Cash-tax timing, fixed refinancing, aggregate working-capital balances and the
+existing declining-balance asset method are unchanged in this increment.

@@ -215,9 +215,11 @@ def test_saved_bbwi_workbook_has_history_visible_drivers_and_no_schedules(tmp_pa
 	from smrik_fund.portable_model import prepare_model
 
 	model = prepare_model(CASE)
-	model["controls"] = json.loads(
-		(ROOT / "data/weekend/20260919/BBWI/assumptions.json").read_text()
-	)["controls"]
+	model["controls"].update(
+		json.loads((ROOT / "data/weekend/20260919/BBWI/assumptions.json").read_text())[
+			"controls"
+		]
+	)
 	snapshot = build(model, tmp_path)
 	assert snapshot["per_share_value"] == pytest.approx(41.470558671367186)
 	assert snapshot["presentation"]["history_columns"] == 5
@@ -252,7 +254,7 @@ def test_saved_bbwi_workbook_has_history_visible_drivers_and_no_schedules(tmp_pa
 				f"Export lost driver {address}"
 			)
 		assert "H12" in income["H11"].findtext("s:f", namespaces=ns)
-		assert "H29" in income["H28"].findtext("s:f", namespaces=ns)
+		assert "H49" in income["H48"].findtext("s:f", namespaces=ns)
 		assert "SUM(H6:H11)" in balance["H15"].findtext("s:f", namespaces=ns)
 		for name in names:
 			assert all(
