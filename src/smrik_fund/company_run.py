@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from smrik_fund.analysis_transport import _structured_response
 from smrik_fund.company_case import freeze_company, validate_case
 from smrik_fund.company_model import CONTROL_BOUNDS, validate_controls
 from smrik_fund.portable_model import prepare_model
+from smrik_fund.workbook_template import DEFAULT_TEMPLATE, compile_template
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE = ROOT / "scripts/spreadsheet_compat/company-workbook.mjs"
@@ -173,19 +175,24 @@ def build(model, output_dir):
 	output_dir.mkdir(parents=True, exist_ok=True)
 	save(output_dir / "model.json", model)
 	if not (output_dir / "snapshot.json").exists():
-		subprocess.run(
-			[
-				"node",
-				str(ENGINE),
-				str(output_dir / "model.json"),
-				str(output_dir / f"{model['case']}.xlsx"),
-				str(output_dir / "snapshot.json"),
-			],
-			check=True,
-			capture_output=True,
-			text=True,
-			timeout=120,
-		)
+		try:
+			subprocess.run(
+				[
+					"node",
+					str(ENGINE),
+					str(output_dir / "model.json"),
+					str(output_dir / f"{model['case']}.xlsx"),
+					str(output_dir / "snapshot.json"),
+				],
+				check=True,
+				capture_output=True,
+				text=True,
+				timeout=120,
+			)
+		except subprocess.CalledProcessError as exc:
+			raise ValueError(
+				"Workbook calculation stopped: " + (exc.stderr or str(exc))[-2400:]
+			) from exc
 	snapshot = read(output_dir / "snapshot.json")
 	if snapshot["mechanical"] != "PASS" or snapshot["valuation_gate"] != "PASS":
 		raise ValueError(
@@ -224,6 +231,7 @@ def run_case(
 	resume_from=None,
 	assumptions=None,
 	progress=None,
+	template=None,
 ):
 	def stage(name, status, detail):
 		if progress is not None:
@@ -258,10 +266,19 @@ def run_case(
 		raise ValueError("Requested ticker differs from frozen company case")
 	budget_path = Path(budget_path or ROOT / "data/build-guide-api-budget.json")
 	price_dir = Path(price_dir or ROOT / "data/pricing/2026-09-10")
+	template_path = Path(template or DEFAULT_TEMPLATE)
+	if prior:
+		# Numeric revisions retain the exact previously reviewed model structure.
+		template_path = Path(prior) / "template.xlsx"
+	patch = compile_template(template_path) if template_path.exists() else None
+	if patch is None and not prior:
+		raise ValueError(f"Model template missing: {template_path}")
 	code = {
 		str(path.relative_to(ROOT)): fingerprint(path)
 		for path in (
 			ENGINE,
+			ROOT / "scripts/spreadsheet_compat/company-template.mjs",
+			ROOT / "src/smrik_fund/workbook_template.py",
 			ROOT / "scripts/spreadsheet_compat/company-statements.mjs",
 			FORMATTER,
 			Path(__file__),
@@ -280,6 +297,8 @@ def run_case(
 			"case_hash": content_hash(manifest),
 			"code": code,
 			"live": live,
+			"template_sha256": patch["sha256"] if patch else None,
+			"template_contract_sha256": patch["contract_sha256"] if patch else None,
 			"beta_revision": beta,
 			"prior": str(Path(prior).resolve()) if prior else None,
 			"resume_from": str(Path(resume_from).resolve()) if resume_from else None,
@@ -291,12 +310,31 @@ def run_case(
 		"Assemble source-bound balances, history and forecast periods",
 	)
 	model = prepare_model(case_dir)
+	if patch is not None:
+		for source, destination, expected in (
+			(template_path, output_dir / "template.xlsx", patch["sha256"]),
+			(
+				template_path.with_suffix(".json"),
+				output_dir / "template.json",
+				patch["contract_sha256"],
+			),
+		):
+			if not destination.exists():
+				shutil.copyfile(source, destination)
+			if fingerprint(destination) != expected:
+				raise ValueError(
+					"Template changed while freezing the run; start a new run"
+				)
+		model["workbook_template"] = patch
+		model["limitations"].append(patch["note"])
 	stage("assembly", "PASS", "Source inputs assembled; reported values preserved")
 	if assumptions is not None:
 		save(output_dir / "operator-assumptions.json", assumptions)
 	if prior:
 		version = read(Path(prior) / "version.json")
 		old_model = read(Path(prior) / "reviewed/model.json")
+		if old_model.get("workbook_template") != patch:
+			raise ValueError("Prior frozen template differs from its reviewed model")
 		if (
 			version["model_sha256"] != fingerprint(Path(prior) / "reviewed/model.json")
 			or old_model["case_hash"] != model["case_hash"]
@@ -323,6 +361,13 @@ def run_case(
 			"limitations": old_model["analyst"].get("limitations", []),
 		}
 	elif resume_from:
+		prior_request = json.loads(
+			read(Path(resume_from) / "analyst.request.json")["input"]
+		)
+		if prior_request["model"].get("workbook_template") != model.get(
+			"workbook_template"
+		):
+			raise ValueError("Saved analyst uses a different Excel template")
 		analyst = completed_analyst(resume_from, model["case_hash"])
 		model["controls"].update(analyst["controls"])
 		model["analyst"] = analyst
@@ -340,7 +385,7 @@ def run_case(
 			output_dir,
 			"analyst",
 			{
-				"task": "Propose conservative provisional controls for an E2E development valuation. User explicitly authorizes estimates/default simplifications for testing. Do not alter source values. These are not observed market inputs. Respect control bounds. Retain zero distributions when capital spending consumes operating cash; do not assume financing plugs. Keep assumptions coherent, explain major risks. PP&E/intangible horizon is a declining-carrying-balance time constant, not a straight-line vintage life. Share-price/diluted-share inputs are explicit proxies. Return all controls.",
+				"task": "Propose conservative provisional controls for an E2E development valuation. User explicitly authorizes estimates/default simplifications for testing. Do not alter source values. These are not observed market inputs. Respect control bounds. Retain zero distributions when capital spending consumes operating cash; do not assume financing plugs. Keep assumptions coherent, explain major risks. PP&E/intangible horizon is a declining-carrying-balance time constant, not a straight-line vintage life. Share-price/diluted-share inputs are explicit proxies. Return all controls. Any workbook_template changes are operator-authored formulas applied before calculation; your authority is limited to supported controls.",
 				"model": model,
 			},
 			review=False,
@@ -363,7 +408,9 @@ def run_case(
 	)
 	unsupported = set(model["controls"]) - set(model["control_bounds"])
 	if unsupported:
-		raise ValueError(f"Controls lack supported source methods: {sorted(unsupported)}")
+		raise ValueError(
+			f"Controls lack supported source methods: {sorted(unsupported)}"
+		)
 	snapshot = build(model, output_dir / "candidate-0")
 	stage("calculation", "PASS", "Accounting, valuation and local-edit gates passed")
 	review = {"status": "PROVISIONAL_UNREVIEWED", "human_approval": False}
@@ -373,7 +420,7 @@ def run_case(
 				output_dir,
 				f"review-{attempt}",
 				{
-					"task": "Independently review this provisional company DCF against source inputs and ALL calculated schedules. User authorizes estimates and simple development policies, not accounting errors. Check balance/cash/earnings links, D&A and SBC double counting, working capital, terminal reinvestment, claims/share proxy and source scope. Accept only a coherent explicitly qualified E2E scenario; acceptance is not investment/human approval. Reject substantive defects that controls cannot fix. For revise, return a complete corrected controls object; never change source facts. For accept, return current controls exactly. Explain limitations.",
+					"task": "Independently review this provisional company DCF against source inputs and ALL calculated schedules. User authorizes estimates and simple development policies, not accounting errors. Check balance/cash/earnings links, D&A and SBC double counting, working capital, terminal reinvestment, claims/share proxy and source scope. Accept only a coherent explicitly qualified E2E scenario; acceptance is not investment/human approval. Reject substantive defects that controls cannot fix. For revise, return a complete corrected controls object; never change source facts. For accept, return current controls exactly. Explain limitations. Inspect workbook_template changes and calculated formula_examples: operator-authored formulas may change model mechanics. Reject incoherent edits that controls cannot fix.",
 					"model": model,
 					"calculated": snapshot,
 				},
@@ -446,6 +493,7 @@ def run_case(
 		)
 	version = {
 		"ticker": model["case"],
+		"template_sha256": model.get("workbook_template", {}).get("sha256"),
 		"status": review["status"],
 		"human_approval": False,
 		"model_sha256": fingerprint(output_dir / "reviewed/model.json"),

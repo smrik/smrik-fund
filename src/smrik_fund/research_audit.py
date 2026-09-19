@@ -257,6 +257,21 @@ def audit_run(run_dir: Path, data_root: Path = DATA_ROOT) -> dict:
 						),
 					)
 					artifact(path, "Excel workbook" if name.endswith(".xlsx") else name)
+				if model.get("workbook_template"):
+					patch = model["workbook_template"]
+					for name, key in (
+						("template.xlsx", "sha256"),
+						("template.json", "contract_sha256"),
+					):
+						path = within_data(run_dir / name, data_root)
+						check(
+							f"Unchanged {name}",
+							lambda p=path, k=key: require(
+								file_hash(p) == patch[k],
+								"Frozen template differs from the calculated model",
+							),
+						)
+						artifact(path, name)
 				snapshot = read(run_dir / "reviewed/snapshot.json")
 				check(
 					"Accounting and valuation gates",

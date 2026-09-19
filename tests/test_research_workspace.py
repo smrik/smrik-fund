@@ -254,6 +254,35 @@ def published_run(tmp_path):
 	return run
 
 
+def test_frozen_template_audit_detects_changes(published_run, tmp_path):
+	from smrik_fund.research_audit import file_hash
+
+	run = published_run
+	(run / "template.xlsx").write_bytes(b"synthetic template")
+	(run / "template.json").write_text("{}")
+	model_path = run / "reviewed/model.json"
+	model = json.loads(model_path.read_text())
+	model["workbook_template"] = {
+		"sha256": file_hash(run / "template.xlsx"),
+		"contract_sha256": file_hash(run / "template.json"),
+	}
+	write_json(model_path, model)
+	version_path = run / "version.json"
+	version = json.loads(version_path.read_text())
+	version["model_sha256"] = file_hash(model_path)
+	write_json(version_path, version)
+	assert audit_run(run, tmp_path)["integrity"] == "PASS"
+	(run / "template.xlsx").write_bytes(b"changed template")
+	result = audit_run(run, tmp_path)
+	assert result["integrity"] == "FAIL"
+	assert (
+		next(c for c in result["checks"] if c["label"] == "Unchanged template.xlsx")[
+			"status"
+		]
+		== "FAIL"
+	)
+
+
 @pytest.mark.parametrize(
 	"relative",
 	[

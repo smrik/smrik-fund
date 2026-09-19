@@ -1,3 +1,4 @@
+import { templateEdits } from "./company-template.mjs";
 import { buildStatements } from "./company-statements.mjs";
 import { createWorkbook } from "@mog-sdk/sdk";
 import { readFile, writeFile, mkdir, access } from "node:fs/promises";
@@ -60,7 +61,15 @@ for (const name of [
 ])
   await wb.sheets.add(name);
 
+const indices = {};
+const edits = templateEdits(
+  model.workbook_template,
+  model.annual_history?.periods?.length ?? 0,
+  indices,
+  model.periods.length - (model.periods[0].id.endsWith("_STUB") ? 1 : 0),
+);
 async function table(name, rows) {
+  rows = edits.table(name, rows);
   const sheet = await wb.getSheet(name);
   const width = Math.max(...rows.map((r) => r.length));
   await sheet.setRange(
@@ -93,6 +102,11 @@ async function table(name, rows) {
     await sheet.formats.setRange(`B4:${letter(width - 1)}${rows.length}`, {
       numberFormat: "#,##0.00;(#,##0.00);–",
     });
+  for (const edit of edits.customCells(name))
+    if (edit.numberFormat)
+      await sheet.formats.setRange(`${edit.cell}:${edit.cell}`, {
+        numberFormat: edit.numberFormat,
+      });
   return sheet;
 }
 const inputRows = [
@@ -102,7 +116,6 @@ const inputRows = [
   ],
   ["Input", "Value", "Basis"],
 ];
-const indices = {};
 function input(key, value, basis) {
   inputRows.push([
     displayNames[key] ??
@@ -561,6 +574,14 @@ await table("Review", [
     "Analyst rationale",
     model.analyst?.rationale ?? "Agent defaults authorized for E2E testing",
   ],
+  ...(model.workbook_template
+    ? [
+        [
+          "Excel template",
+          `${model.workbook_template.sha256}; ${Object.values(model.workbook_template.changes).reduce((n, cells) => n + Object.keys(cells).length, 0)} edited cells. Frozen template.xlsx and template.json accompany this run.`,
+        ],
+      ]
+    : []),
   ...model.limitations.map((s, i) => [`Caveat ${i + 1}`, s]),
   [
     "Local edits",
@@ -604,16 +625,37 @@ async function snapshot() {
     per_share_value: await dcf.getValue("B19"),
     schedules: {},
     schedule_cells: {},
-    historical_checks: view.historyChecks,
+    historical_checks: view.historyChecks.map(edits.address),
+    template: model.workbook_template
+      ? {
+          sha256: model.workbook_template.sha256,
+          edited_cells: Object.values(model.workbook_template.changes).reduce(
+            (n, cells) => n + Object.keys(cells).length,
+            0,
+          ),
+        }
+      : null,
     presentation: {
       history_columns: view.historyColumns,
       headers: view.headings,
-      drivers: view.drivers,
-      income_percent_rows: view.incomePercentRows,
+      row_maps: model.workbook_template?.row_maps ?? {},
+      drivers: Object.fromEntries(
+        Object.entries(view.drivers).map(([sheet, rows]) => [
+          sheet,
+          Object.fromEntries(
+            Object.entries(rows).map(([r, v]) => [edits.row(sheet, r), v]),
+          ),
+        ]),
+      ),
+      income_percent_rows: view.incomePercentRows.map((r) =>
+        edits.row("Income", r),
+      ),
     },
   };
   for (let r = 4; r <= 55; r++) {
-    const cells = model.periods.map((p, i) => view.address(i, r));
+    const cells = model.periods.map((p, i) =>
+      edits.address(view.address(i, r)),
+    );
     result.schedule_cells[rows[r - 1][0]] = cells;
     result.schedules[rows[r - 1][0]] = await Promise.all(
       cells.map(async (a) =>
@@ -625,34 +667,67 @@ async function snapshot() {
     rows.slice(3).map((r, offset) => [
       r[0],
       [0, 1, 10].map((i) => {
-        const a = view.address(i, offset + 4);
+        const a = edits.address(view.address(i, offset + 4));
         if (a.constant === 0) return "=0";
-        if (a.sheet === "Stub") return r[1].formula;
         const row = Number(a.cell.replace(/[A-Z]/g, ""));
         const column = [...a.cell.replace(/\d/g, "")].reduce(
           (n, c) => n * 26 + c.charCodeAt(0) - 64,
           0,
         );
-        return view.grids[a.sheet]?.[row - 1]?.[column - 1]?.formula ?? null;
+        return (
+          edits.rendered[a.sheet]?.[row - 1]?.[column - 1]?.formula ?? null
+        );
       }),
     ]),
   );
   result.operating_checks = [];
   for (const p of view.forecast) {
     for (const r of [11, 14, 17, 20, 26, 29, 32, 35, 36, 38]) {
-      const cell = `${view.column(p.index)}${r}`;
+      const cell = `${view.column(p.index)}${edits.row("Income", r)}`;
       const value = await (await wb.getSheet("Income")).getValue(cell);
       if (typeof value === "number")
         result.operating_checks.push({ sheet: "Income", cell, value });
     }
   }
+  result.template_cells = [];
+  for (const name of Object.keys(model.workbook_template?.changes ?? {})) {
+    const sheet = await wb.getSheet(name);
+    for (const edit of edits.customCells(name)) {
+      const value = await sheet.getValue(edit.cell);
+      if (
+        typeof value === "string" &&
+        /^#(REF!|DIV\/0!|VALUE!|NAME\?|N\/A|NUM!|NULL!|SPILL!|CALC!)/.test(
+          value,
+        )
+      )
+        throw Error(`Template formula error: ${name}!${edit.cell}: ${value}`);
+      result.template_cells.push({
+        sheet: name,
+        cell: edit.cell,
+        value,
+        formula: edit.value?.formula ?? null,
+        number_format: edit.numberFormat ?? null,
+      });
+    }
+  }
   result.dcf_formulas = Object.fromEntries(
-    dcfRows.slice(3, 21).map((r) => [r[0], r[1].formula]),
+    dcfRows.slice(3, 21).map((r) => [r[0], edits.formula(r[1].formula, "DCF")]),
   );
   return result;
 }
 try {
   const base = await snapshot();
+  if (base.mechanical !== "PASS" || base.valuation_gate !== "PASS") {
+    await mkdir(dirname(resolve(process.argv[4])), { recursive: true });
+    await writeFile(
+      process.argv[4],
+      JSON.stringify({ ...base, input_rows: indices }, null, 2),
+      { flag: "wx" },
+    );
+    throw Error(
+      "Calculated company model is blocked; inspect preserved snapshot",
+    );
+  }
   // Mandatory local-edit and missing-input proof, restored before export.
   await inputs.setCell(`B${indices.beta}`, model.controls.beta + 0.1);
   await wb.calculate();
@@ -712,7 +787,7 @@ try {
   await mkdir(dirname(out), { recursive: true });
   // Write sparse statement rows cell-by-cell before export. The SDK bulk writer
   // calculates these rows but can omit formulas after leading blank actuals.
-  for (const [name, grid] of Object.entries(view.grids)) {
+  for (const [name, grid] of Object.entries(edits.rendered)) {
     if (name === "DCF") continue;
     const sheet = await wb.getSheet(name);
     for (let r = 0; r < grid.length; r++)

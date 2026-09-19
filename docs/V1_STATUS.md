@@ -2,6 +2,24 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Editable Excel template - verified 2026-09-19
+
+- `templates/company-model.xlsx` supports inserted forecast rows and formula edits
+  on the statements/support tabs. [Editing instructions](../templates/README.md).
+  New UI/CLI company runs automatically use it; unchanged cells are regenerated
+  from each issuer's sources. Default template has no financial overrides.
+- Runs freeze template/contract files and hashes. Original row anchors preserve
+  cross-sheet formulas; source/audit modifications and incompatible layouts stop.
+  The run audit verifies both frozen template artifacts.
+- Native Excel insertion proof: an additional 0.5% sales expense reduces BBWI's
+  provisional value from $41.4706 to $39.8646/share. BBWI and NVDA pass native
+  recalculation with zero formula errors. AAPL's extra revenue rows pass too.
+- 18 focused tests pass; 43 other history/model/workbench regressions passed.
+  The free simulated analyst -> reviewer revision -> recalculation cycle passes.
+  Live LLM validation and PR-stack merges remain awaiting explicit approval.
+- Latest BBWI output: `data/workspace/runs/20260919-bbwi-template-verified/reviewed/BBWI.xlsx`.
+  LLM authority remains supported numeric controls, not arbitrary formula edits.
+
 ## Operating cost drivers - verified 2026-09-19
 
 - Separate COGS/SG&A/R&D forecasts require reconciled FY/YTD expense composition;
