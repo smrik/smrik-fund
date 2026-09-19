@@ -30,3 +30,8 @@ tmp/
 Lunacy/runs/
 .out-of-code-insights/
 docs/annotations/
+
+# One-off local development probes, retained on this computer
+scripts/p6_state_proof_r4.py
+scripts/prepare-p6-live-r3.py
+tmpsmrik-fund-pytest-cache/

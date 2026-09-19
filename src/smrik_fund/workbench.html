@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SMRIK Fund · Research workbench</title>
+    <style>
+      :root {
+        --ink: #182d3b;
+        --muted: #627584;
+        --line: #dbe3e9;
+        --blue: #225acd;
+        --green: #16664c;
+        --amber: #8d5614;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        color: var(--ink);
+        background: #f4f6f8;
+      }
+      header {
+        background: #142c3b;
+        color: white;
+        padding: 24px max(26px, calc((100vw - 1450px) / 2));
+      }
+      header .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .brand {
+        font-weight: 800;
+        letter-spacing: 2px;
+        font-size: 13px;
+      }
+      .badge {
+        font-size: 12px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        background: #284551;
+      }
+      h1 {
+        font-size: 31px;
+        margin: 18px 0 5px;
+        letter-spacing: -0.6px;
+      }
+      header p {
+        color: #c7d7e1;
+        margin: 0;
+        max-width: 940px;
+      }
+      main {
+        max-width: 1500px;
+        margin: auto;
+        padding: 22px 26px 50px;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .flow div {
+        border-bottom: 2px solid #a8bfce;
+        padding: 8px 10px;
+        background: white;
+      }
+      .flow b {
+        display: block;
+      }
+      .flow span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 22px;
+      }
+      .stat {
+        background: white;
+        border: 1px solid var(--line);
+        padding: 14px 18px;
+        border-radius: 8px;
+      }
+      .stat strong {
+        font-size: 26px;
+        display: block;
+      }
+      .stat span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 330px minmax(0, 1fr);
+        gap: 22px;
+      }
+      .panel {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 20px;
+        margin-bottom: 18px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 0 0 9px;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 20px 0 9px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        font-size: 12px;
+        margin: 12px 0 5px;
+      }
+      input,
+      select,
+      textarea {
+        font: inherit;
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #b7c5d0;
+        border-radius: 5px;
+        color: var(--ink);
+        background: white;
+      }
+      textarea {
+        min-height: 160px;
+        font:
+          12px/1.4 ui-monospace,
+          monospace;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        border: 0;
+        background: var(--blue);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .primary {
+        width: 100%;
+        margin-top: 12px;
+      }
+      .quiet {
+        background: #eaf0f6;
+        color: var(--ink);
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+      small,
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      p {
+        margin: 6px 0 12px;
+      }
+      a {
+        color: var(--blue);
+        text-underline-offset: 2px;
+      }
+      .scroll {
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      th {
+        text-align: left;
+        background: #eef3f7;
+        color: #506774;
+        padding: 9px;
+        white-space: nowrap;
+      }
+      td {
+        padding: 10px 9px;
+        border-bottom: 1px solid #e6ecf0;
+        vertical-align: top;
+      }
+      tbody tr:hover {
+        background: #f8fafc;
+      }
+      .pill {
+        display: inline-block;
+        padding: 3px 7px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        background: #edf2f6;
+        color: #465e70;
+        white-space: nowrap;
+      }
+      .pass {
+        color: var(--green);
+        background: #e4f3ec;
+      }
+      .warn {
+        color: var(--amber);
+        background: #fff2d9;
+      }
+      .fail {
+        color: #9d3041;
+        background: #fcebf0;
+      }
+      .audit-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+      }
+      .facts {
+        display: flex;
+        gap: 25px;
+        flex-wrap: wrap;
+        margin: 16px 0;
+      }
+      .facts strong {
+        display: block;
+        font-size: 23px;
+      }
+      .notice {
+        background: #fff5df;
+        padding: 11px 14px;
+        border-left: 3px solid #d7a344;
+        margin: 12px 0;
+        font-size: 12px;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .check {
+        padding: 10px;
+        background: #f4f7f9;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+      .check .pill {
+        margin-right: 6px;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+        margin-top: 15px;
+      }
+      summary {
+        font-weight: 650;
+        cursor: pointer;
+      }
+      li {
+        margin: 6px 0;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #132938;
+        color: #d7e4ec;
+        padding: 14px;
+        font:
+          12px/1.5 ui-monospace,
+          monospace;
+        border-radius: 6px;
+        max-height: 260px;
+        overflow: auto;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+      .links a {
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        text-decoration: none;
+        font-size: 12px;
+      }
+      .error {
+        color: #9d3041;
+        background: #fcebf0;
+        padding: 12px;
+        border-radius: 5px;
+        display: none;
+      }
+      .job {
+        background: #eef4ff;
+        border: 1px solid #c3d5f6;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 18px;
+      }
+      .search {
+        max-width: 260px;
+        margin-bottom: 12px;
+      }
+      .empty {
+        padding: 25px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .section-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .foot {
+        margin-top: 16px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 950px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .flow,
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .checks {
+          grid-template-columns: 1fr;
+        }
+        header {
+          padding: 22px;
+        }
+        main {
+          padding: 18px;
+        }
+        .audit-head {
+          display: block;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="top">
+        <div class="brand">SMRIK FUND / RESEARCH WORKBENCH</div>
+        <span class="badge">LOCAL · FREE RUNS</span>
+      </div>
+      <h1>From a stock idea to an inspectable model.</h1>
+      <p>
+        Screen US-listed companies, freeze their SEC filings, build linked
+        financial statements and a DCF, then inspect the evidence and open
+        Excel.
+      </p>
+    </header>
+    <main>
+      <div class="flow">
+        <div>
+          <b>01 · Screen</b
+          ><span>Free quotes, value signals and explicit filters</span>
+        </div>
+        <div>
+          <b>02 · Capture evidence</b
+          ><span>Frozen filings, source dates and reported values</span>
+        </div>
+        <div>
+          <b>03 · Calculate</b
+          ><span>Linked statements, assumptions and accounting checks</span>
+        </div>
+        <div>
+          <b>04 · Review</b
+          ><span>Audit the run, challenge the forecast, open Excel</span>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="error" class="error" role="alert"></div>
+      <div class="layout">
+        <aside>
+          <form class="panel" id="screen-form">
+            <h2>Start a free screen</h2>
+            <p class="muted">
+              A research queue. Cheap ratios alone do not establish mispricing.
+            </p>
+            <label for="tickers">US-listed tickers</label
+            ><input
+              id="tickers"
+              value="MSFT,META,HD,KO,LULU,HPQ,BBWI"
+              placeholder="e.g. MSFT,META,HD"
+            /><small
+              >Up to 30 tickers. Leave blank to screen the supported US
+              universe.</small
+            ><button class="primary" type="submit">Run free screen</button>
+          </form>
+          <form class="panel" id="deep-form">
+            <h2>Analyze a company</h2>
+            <p class="muted">
+              Uses a saved screen, fetches SEC filings and attempts a
+              provisional DCF. Banks, REITs and unsupported cases keep an
+              explicit stop reason.
+            </p>
+            <label for="screen-choice">Saved screen</label
+            ><select id="screen-choice"></select
+            ><label for="ticker-choice">Company</label
+            ><select id="ticker-choice"></select>
+            <p id="company-note" class="muted"></p>
+            <details>
+              <summary>Optional scenario assumptions</summary>
+              <p class="muted">
+                Leave blank for recorded development defaults using the selected
+                quote. Or paste an existing operator-assumptions JSON to make an
+                explicit revision.
+              </p>
+              <textarea
+                id="assumptions"
+                aria-label="Optional scenario assumptions JSON"
+                placeholder='{"controls": {...}, "rationale": "Why these assumptions", "limitations": ["..."]}'
+              ></textarea>
+            </details>
+            <button class="primary" type="submit">
+              Run free company analysis
+            </button>
+            <p class="foot">
+              One job at a time. Desktop Excel is required for the final
+              workbook check. No paid agent can be triggered here.
+            </p>
+          </form>
+          <div class="panel">
+            <h2>What “complete” means</h2>
+            <p>
+              Sources and calculations are saved; implemented checks passed.
+              Forecast assumptions still need judgment.
+            </p>
+            <p class="muted">
+              Source integrity, accounting checks and analytical approval are
+              separate. A stopped run is visible evidence of a limitation.
+            </p>
+            <code>smrik-fund daily serve</code>
+          </div>
+        </aside>
+        <div>
+          <div id="jobs"></div>
+          <section class="panel" id="audit">
+            <h2>Inspect a run</h2>
+            <p class="empty">
+              Choose “Inspect” to see checks, sources, assumptions and outputs.
+            </p>
+          </section>
+          <section class="panel">
+            <div class="section-top">
+              <h2>Research history</h2>
+              <button id="refresh" class="quiet">Refresh</button>
+            </div>
+            <p class="muted">
+              The latest 12 matching runs on this computer. Filter by ticker or
+              status to find earlier work.
+            </p>
+            <input
+              id="filter"
+              class="search"
+              aria-label="Filter research runs"
+              placeholder="Filter by ticker or status"
+            />
+            <div class="scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Company / run</th>
+                    <th>Result</th>
+                    <th>Saved</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="runs"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+      <p class="foot">
+        Every action uses the existing free Python/Typer workflow. Local files
+        remain on your computer. Historical paid reviews may appear in the run
+        history; this interface cannot start one.
+      </p>
+    </main>
+    <script>
+      const token = "__SESSION_TOKEN__";
+      const $ = (s) => document.querySelector(s);
+      const escapeText = (s) =>
+        String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const pathUrl = (s) => s.split("/").map(encodeURIComponent).join("/");
+      const money = (n) =>
+        Number.isFinite(n)
+          ? "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+          : "—";
+      const pretty = (s) =>
+        ({
+          PROVISIONAL_UNREVIEWED: "Provisional model",
+          SYSTEM_REVIEWED_DEVELOPMENT: "Development review passed",
+          FREE_RESEARCH_COMPLETE: "Screen complete",
+          PARTIAL_SOURCE_COVERAGE: "Partial coverage",
+          SOURCE_ONLY_SPECIALIST_METHOD_REQUIRED: "Specialist method needed",
+          BLOCKED: "Stopped",
+          INCOMPLETE: "Incomplete",
+          INVALID_ARTIFACT: "Invalid artifact",
+        })[s] ?? s;
+      const pill = (s) =>
+        `<span class="pill ${s === "PASS" ? "pass" : s === "FAIL" || s === "FAILED" || s === "BLOCKED" ? "fail" : "warn"}">${escapeText(pretty(s))}</span>`;
+      let runs = [],
+        companies = [],
+        selectedRun = null,
+        active = false,
+        loading = false;
+      async function api(url, options) {
+        const r = await fetch(url, options);
+        const data = await r.json();
+        if (!r.ok) throw Error(data.error || r.statusText);
+        return data;
+      }
+      function error(e) {
+        $("#error").textContent = e.message;
+        $("#error").style.display = "block";
+      }
+      function rowsTable(headers, rows) {
+        return `<div class="scroll"><table><thead><tr>${headers.map((h) => `<th>${escapeText(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((v) => `<td>${v}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      }
+      function renderRuns() {
+        const filter = $("#filter").value.toLowerCase();
+        $("#runs").innerHTML =
+          runs
+            .filter((r) =>
+              (r.ticker + " " + r.id + " " + r.status)
+                .toLowerCase()
+                .includes(filter),
+            )
+            .slice(0, 12)
+            .map(
+              (r) =>
+                `<tr><td><strong>${escapeText(r.ticker)}</strong><br><small>${escapeText(r.kind === "screen" ? `${r.counts.universe ?? 0} companies · ${r.counts.shortlist ?? 0} shortlisted` : r.id)}</small></td><td>${pill(r.status)}</td><td>${r.updated ? new Date(r.updated * 1000).toLocaleDateString() : "—"}</td><td><button class="quiet inspect" data-id="${escapeText(r.id)}">Inspect</button></td></tr>`,
+            )
+            .join("") ||
+          '<tr><td colspan="4" class="empty">No matching runs. Start a screen above.</td></tr>';
+        document
+          .querySelectorAll(".inspect")
+          .forEach(
+            (b) => (b.onclick = () => inspect(b.dataset.id).catch(error)),
+          );
+      }
+      async function loadCompanies() {
+        const id = $("#screen-choice").value;
+        if (!id) return;
+        // Clear the old selection while evidence for the new screen loads.
+        $("#ticker-choice").innerHTML = "";
+        $("#deep-form button[type=submit]").disabled = true;
+        const audit = await api("/api/audit/" + pathUrl(id));
+        if (id !== $("#screen-choice").value) return;
+        companies = audit.companies || [];
+        $("#ticker-choice").innerHTML = companies
+          .map(
+            (c) =>
+              `<option value="${escapeText(c.ticker)}">${escapeText(c.ticker + " · " + c.name)}</option>`,
+          )
+          .join("");
+        companyNote();
+        $("#deep-form button[type=submit]").disabled =
+          active || !companies.length || audit.integrity !== "PASS";
+      }
+      function companyNote() {
+        const c = companies.find((c) => c.ticker === $("#ticker-choice").value);
+        $("#company-note").textContent = c
+          ? `${c.method}. ${c.flags.join("; ")}`
+          : "";
+      }
+      async function refresh() {
+        if (loading) return;
+        loading = true;
+        try {
+          const wasActive = active;
+          const data = await api("/api/runs");
+          runs = data.runs;
+          active = data.jobs.some((j) =>
+            ["RUNNING", "QUEUED"].includes(j.status),
+          );
+          $("#stats").innerHTML = [
+            [runs.filter((r) => r.kind === "screen").length, "Saved screens"],
+            [
+              runs.filter((r) =>
+                [
+                  "PROVISIONAL_UNREVIEWED",
+                  "SYSTEM_REVIEWED_DEVELOPMENT",
+                ].includes(r.status),
+              ).length,
+              "Published development models",
+            ],
+            [
+              runs.filter((r) =>
+                ["BLOCKED", "SOURCE_ONLY_SPECIALIST_METHOD_REQUIRED"].includes(
+                  r.status,
+                ),
+              ).length,
+              "Visible stops / method limits",
+            ],
+            ["€0", "Paid API spend from this interface"],
+          ]
+            .map(
+              ([n, l]) =>
+                `<div class="stat"><strong>${n}</strong><span>${l}</span></div>`,
+            )
+            .join("");
+          renderRuns();
+          const old = $("#screen-choice").value;
+          $("#screen-choice").innerHTML = runs
+            .filter((r) => r.kind === "screen")
+            .map(
+              (r) =>
+                `<option value="${escapeText(r.id)}">${escapeText(r.id)} · ${r.counts.universe ?? 0} companies</option>`,
+            )
+            .join("");
+          if (runs.some((r) => r.id === old)) $("#screen-choice").value = old;
+          if (!companies.length || old !== $("#screen-choice").value)
+            await loadCompanies();
+          $("#jobs").innerHTML = data.jobs
+            .slice(0, 1)
+            .map(
+              (j) =>
+                `<div class="job"><strong>${escapeText(j.action === "screen" ? "Free screen" : j.ticker + " company analysis")}</strong> ${pill(j.outcome || j.status)} <button class="quiet inspect-job" data-id="${escapeText(j.output)}">Inspect progress / result</button>${j.reason ? "<p>" + escapeText(j.reason) + "</p>" : ""}<details><summary>Execution receipt and log</summary><p class="muted">Started ${escapeText(j.started_at || j.created_at)}${j.finished_at ? " · finished " + escapeText(j.finished_at) : ""}</p><pre>${escapeText(j.log || "Waiting for the worker…")}</pre></details></div>`,
+            )
+            .join("");
+          document
+            .querySelectorAll(".inspect-job")
+            .forEach(
+              (b) => (b.onclick = () => inspect(b.dataset.id).catch(error)),
+            );
+          document
+            .querySelectorAll("form button")
+            .forEach((b) => (b.disabled = active));
+          if (!selectedRun) {
+            selectedRun =
+              new URLSearchParams(location.hash.slice(1)).get("run") ||
+              runs.find((r) =>
+                [
+                  "PROVISIONAL_UNREVIEWED",
+                  "SYSTEM_REVIEWED_DEVELOPMENT",
+                ].includes(r.status),
+              )?.id ||
+              runs[0]?.id;
+            if (selectedRun) await inspect(selectedRun, false);
+          } else if (active || wasActive) await inspect(selectedRun, false);
+        } finally {
+          loading = false;
+        }
+      }
+      async function inspect(id, scroll = true) {
+        selectedRun = id;
+        const a = await api("/api/audit/" + pathUrl(id));
+        history.replaceState(null, "", "#run=" + encodeURIComponent(id));
+        const v = a.valuation;
+        const checks = a.checks
+          .map(
+            (c) =>
+              `<div class="check">${pill(c.status)} ${escapeText(c.label)}${c.reason ? "<p>" + escapeText(c.reason) + "</p>" : ""}</div>`,
+          )
+          .join("");
+        const events = a.events.length
+          ? rowsTable(
+              ["Time", "Stage", "Outcome", "Detail"],
+              a.events.map((x) => [
+                escapeText(new Date(x.at).toLocaleTimeString()),
+                escapeText(x.phase),
+                pill(x.status),
+                escapeText(x.detail),
+              ]),
+            )
+          : '<p class="muted">Historical run: no execution timeline was recorded. The checks above inspect its current saved files.</p>';
+        const files = a.artifacts
+          .map(
+            (x) =>
+              `<a target="_blank" rel="noopener" href="/files/${pathUrl(x.path)}">${escapeText(x.label)}</a>`,
+          )
+          .join("");
+        const assumptions = Array.isArray(a.assumptions)
+          ? "<ul>" +
+            a.assumptions
+              .map((s) => "<li>" + escapeText(s) + "</li>")
+              .join("") +
+            "</ul>"
+          : rowsTable(
+              ["Input", "Saved value"],
+              Object.entries(a.assumptions).map(([k, v]) => [
+                escapeText(k),
+                escapeText(v),
+              ]),
+            );
+        const primaryFiles = a.artifacts
+          .filter((x) =>
+            [
+              "Excel workbook",
+              "Screen report",
+              "All companies CSV",
+              "operator-assumptions.json",
+            ].includes(x.label),
+          )
+          .map(
+            (x) =>
+              `<a target="_blank" rel="noopener" href="/files/${pathUrl(x.path)}">${escapeText(x.label)}</a>`,
+          )
+          .join("");
+        const candidates = a.companies
+          ? rowsTable(
+              [
+                "Company",
+                "USD quote",
+                "P/E",
+                "Vendor FCF yield",
+                "Research status",
+              ],
+              [...a.companies]
+                .sort((x, y) => y.score - x.score)
+                .slice(0, 10)
+                .map((c) => [
+                  escapeText(c.ticker),
+                  money(c.metrics.price),
+                  Number.isFinite(c.metrics.pe) ? c.metrics.pe.toFixed(1) : "—",
+                  Number.isFinite(c.metrics.vendor_fcf_yield)
+                    ? (100 * c.metrics.vendor_fcf_yield).toFixed(1) + "%"
+                    : "—",
+                  escapeText(
+                    c.candidate ? c.signals.join("; ") : c.flags.join("; "),
+                  ),
+                ]),
+            )
+          : "";
+        const sources = rowsTable(
+          ["Filing", "Measurement", "Filed", "Source"],
+          a.sources.map((s) => [
+            escapeText(s.form),
+            escapeText(s.measurement_date),
+            escapeText(s.filing_date),
+            /^https:\/\/(www\.)?sec\.gov\//.test(s.source_url)
+              ? `<a target="_blank" rel="noopener" href="${escapeText(s.source_url)}">${escapeText(s.accession)}</a>`
+              : escapeText(s.accession),
+          ]),
+        );
+        $("#audit").innerHTML =
+          `<div class="audit-head"><div><h2>${escapeText(a.ticker || "Run in progress")}</h2><small>${escapeText(a.id)}</small></div><div>${pill(a.status)} · Evidence ${pill(a.integrity)}</div></div>${v ? `<div class="facts"><div><small>Provisional scenario value / share</small><strong>${money(v.per_share_value)}</strong></div><div><small>WACC assumption</small><strong>${(v.wacc * 100).toFixed(2)}%</strong></div><div><small>Financial measurement</small><strong>${escapeText(a.measurement_date)}</strong></div></div><p class="notice">Scenario output for review. Reported one-offs, forecast assumptions and claim proxies can materially affect this value.</p>` : ""}${a.counts ? `<p>${a.counts.universe} companies → ${a.counts.basic_pass} basic passes → ${a.counts.candidates} candidates → ${a.counts.shortlist} shortlisted.</p>` : ""}${a.companies ? "<h3>Leading research candidates / watchlist</h3>" + candidates + "<p class=muted>Top ten by deterministic research score. Vendor cash flow is unnormalized; open the screen report for all companies and definitions.</p>" : ""}<h3>Evidence and accounting checks</h3><div class="checks">${checks || "<p>Checks appear as the run produces artifacts.</p>"}</div><details ${a.status === "INCOMPLETE" ? "open" : ""}><summary>Execution timeline (${a.events.length} events)</summary>${events}</details><h3>Open results</h3><div class="links">${primaryFiles || '<p class="muted">No published outputs yet.</p>'}</div><details><summary>All outputs and source files (${a.artifacts.length})</summary><div class="links">${files}</div></details>${a.sources.length ? "<h3>Filing provenance</h3>" + sources : ""}<details><summary>Saved assumptions and their rationale</summary><p>${escapeText(a.analyst?.rationale || "")}</p>${assumptions}</details>
+<details><summary>Limitations and unresolved questions (${a.warnings.length})</summary><ul>${a.warnings.map((w) => "<li>" + escapeText(w) + "</li>").join("")}</ul></details>${
+            a.allocations
+              ? "<details><summary>Source classifications and explicit derived groups</summary>" +
+                rowsTable(
+                  ["Group", "Basis", "Value"],
+                  a.allocations.map((x) => [
+                    escapeText(x.group),
+                    escapeText(x.basis),
+                    escapeText(x.value),
+                  ]),
+                ) +
+                "</details>"
+              : ""
+          }${
+            a.evidence
+              ? "<details><summary>Input-level source trace (" +
+                a.evidence.length +
+                " records)</summary>" +
+                rowsTable(
+                  ["ID", "Concept", "Period", "Value / units", "File / line"],
+                  a.evidence.map((x) => [
+                    escapeText(x.id),
+                    escapeText(x.concept),
+                    escapeText(x.column),
+                    escapeText(x.display_value) + " " + escapeText(x.units),
+                    escapeText(x.file) + ":" + escapeText(x.line),
+                  ]),
+                ) +
+                "</details>"
+              : ""
+          }`;
+        if (scroll)
+          $("#audit").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      async function start(payload) {
+        $("#error").style.display = "none";
+        const job = await api("/api/jobs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Workbench-Token": token,
+          },
+          body: JSON.stringify(payload),
+        });
+        selectedRun = job.output;
+        await refresh();
+      }
+      $("#screen-form").onsubmit = (e) => {
+        e.preventDefault();
+        start({ action: "screen", tickers: $("#tickers").value }).catch(error);
+      };
+      $("#deep-form").onsubmit = (e) => {
+        e.preventDefault();
+        try {
+          const payload = {
+            action: "deep",
+            screen: $("#screen-choice").value,
+            ticker: $("#ticker-choice").value,
+          };
+          if ($("#assumptions").value.trim())
+            payload.assumptions = JSON.parse($("#assumptions").value);
+          start(payload).catch(error);
+        } catch (e) {
+          error(e);
+        }
+      };
+      $("#screen-choice").onchange = () => loadCompanies().catch(error);
+      $("#ticker-choice").onchange = companyNote;
+      $("#filter").oninput = renderRuns;
+      $("#refresh").onclick = () => refresh().catch(error);
+      refresh().catch(error);
+      setInterval(() => {
+        if (active) refresh().catch(error);
+      }, 2500);
+    </script>
+  </body>
+</html>

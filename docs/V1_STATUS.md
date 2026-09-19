@@ -2,6 +2,49 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Local workbench and broader coverage — verified 2026-09-19
+
+- [x] Working baseline merged to `main` through [PR #4](https://github.com/smrik/smrik-fund/pull/4),
+  with both status histories preserved. New work is on `codex/research-workbench`.
+  Generated annotations and local run notes were removed from Git tracking and
+  preserved on disk; caches, data, secrets and one-off probes remain ignored.
+- [x] `smrik-fund daily serve` opens a loopback website on port8787: free screens,
+  company analysis, job receipts, run history, candidate metrics, assumptions,
+  source evidence, failure stages and Excel downloads. No paid action is exposed.
+  [Usage and code walkthrough](WORKBENCH.md); [actual UI preview](images/workbench.png).
+- [x] Shared free CLI/UI workflow; immutable run directories and timestamped
+  stages. Screening decisions are recomputed before use. Audit verifies frozen
+  source files, selected screen, source/model bindings, published file hashes,
+  accounting gates and native Excel receipts. Worker crashes remain visible.
+- [x] Additional10-ticker coverage: META, HD and KO complete through formatted
+  native Excel; JPM/O retain sources and require specialist methods; MSFT, JNJ,
+  PG, XOM and CAT stop on documented statement-classification gaps.
+  [Coverage and financial limitations](COVERAGE_20260919.md).
+- [x] Fixed HD's double-counted finance-lease debt components and KO's consolidated
+  earnings/tax bridge. Reported source values remain intact. Supported-case
+  regression tests include the previous AAPL/AMZN/COST/LULU/HPQ/BBWI paths.
+- [x] Actual browser buttons tested: six-company screen → new META SEC capture →
+  DCF → formatted native Excel. Nine audit checks PASS; downloaded workbook hash
+  equals the published original. UI receipt: `data/workspace/validation.json`.
+- [x] Focused regression: **107 tests +9 subtests PASS (49.12s)**:
+  `tests/test_analysis_budget.py`, `tests/test_company_case.py`,
+  `tests/test_daily_research.py`, `tests/test_company_model.py`,
+  `tests/test_portable_model.py`, `tests/test_research_workspace.py`.
+  Changed-code Ruff, browser JavaScript syntax, CLI help and Git whitespace checks PASS.
+  Each new workbook verified572 cells and beta edit/restoration; three coverage
+  workbooks plus the UI-created META workbook total2,288 checked schedule cells.
+- [x] No new paid calls: ledger remains67 calls (64 completed,3 historical
+  usage-unknown). Existing committed budget remains approximately EUR2.9363 of5.
+
+Known limits: universal generic valuation coverage remains unfinished. These
+are provisional reported-TTM scenarios, not normalized investment targets. Native
+Excel needs normal Windows desktop permissions; restricted sandbox attempts were
+retained as failures before fresh successful runs. Historical whole-suite diagnostic
+was595 passed,101 subtests passed,45 failed; failures include expired dated price
+fixtures and older integration expectations. The full legacy suite is not clean
+and was not repaired as part of this feature. GitHub CI runs the portable free
+contracts; optional downloaded KO/HD cases skip on a clean checkout.
+
 ## Weekend valuation pack — completed 2026-09-16
 
 Prepared LULU, HPQ and BBWI for September 19–20:
