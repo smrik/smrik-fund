@@ -1,0 +1,4 @@
+Command: .venv\Scripts\ruff.exe check src/smrik_fund/eval_cases.py src/smrik_fund/eval_workflows.py src/smrik_fund/eval_core.py src/smrik_fund/main.py tests/test_eval_harness.py
+Result: All checks passed!
+Command: git diff --check
+Result: clean; only existing LF/CRLF warnings on dirty files.

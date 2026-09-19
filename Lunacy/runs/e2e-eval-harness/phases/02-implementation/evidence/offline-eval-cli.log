@@ -1,0 +1,11 @@
+HARNESS READY: 20260830T100310404469Z
+Definition: 49c3163de6f9aa22a00be2084c0c9c7cd4c2217eda5710c283d76846942ef63b
+Model attempts: 0/6
+Saved iteration: C:\Projects\finance\smrik-fund\Lunacy\runs\e2e-eval-harness\phases\02-implementation\evidence\offline-eval\20260830T100310404469Z\iteration.json
+MSFT msft_segment_growth_mix: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_segment_profitability_margin: READY / COMPLETED / JUDGE_NOT_RUN
+MSFT msft_openai_nonoperating_quantified: READY / COMPLETED / JUDGE_SKIPPED
+MSFT msft_operating_expense_multi_driver: READY / COMPLETED / JUDGE_SKIPPED
+
+exit_code= 0
+exception= None

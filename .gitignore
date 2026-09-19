@@ -14,3 +14,19 @@ data/
 
 # Confidential
 .env
+.env.*
+!.env.example
+
+# Local tools, test sandboxes and generated output (preserved on disk)
+.pytest_cache/
+.pytest-*/
+.ruff_cache/
+.tmp-*/
+.serena/logs/
+.grok/
+node_modules/
+outputs/
+tmp/
+Lunacy/runs/
+.out-of-code-insights/
+docs/annotations/

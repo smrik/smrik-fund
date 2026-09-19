@@ -1,0 +1,378 @@
+{
+  "case_id": "msft_openai_nonoperating_quantified",
+  "ticker": "MSFT",
+  "suites": [
+    "regression"
+  ],
+  "workflow": "filing",
+  "rubric": {
+    "dimensions": [
+      "movement_scope",
+      "quantified_disclosures",
+      "residual_without_plug",
+      "evidence_grounding"
+    ],
+    "acceptance": "Preserve the +15.598bn movement, +6.5bn/-4.8bn disclosure, +11.3bn known contribution, and +4.298bn unresolved remainder."
+  },
+  "case_status": "READY",
+  "capability": "AVAILABLE",
+  "case_blocked_reason": null,
+  "product_status": "COMPLETED",
+  "product_valid": false,
+  "judge_status": "JUDGE_SKIPPED",
+  "qualitative_verdict": null,
+  "checks": [
+    {
+      "id": "source_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+      "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+    },
+    {
+      "id": "source_manifest_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\manifest.json",
+      "sha256": "3942859034A9DA686A26F657B79965F16D1A982F5390806145A3EFD4F65692B3"
+    },
+    {
+      "id": "scan_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r1\\MSFT\\03_output\\analysis\\analytical_scan_20260827T175543203180Z.json",
+      "sha256": "D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4"
+    },
+    {
+      "id": "investigation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json",
+      "sha256": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF"
+    },
+    {
+      "id": "evidence_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\evidence\\finding_01_movement-i1-1-control.md",
+      "sha256": "63685B3412F9976578474976320B79F2D333E449B4332F28E99BC99F8F86A694"
+    },
+    {
+      "id": "analytical_pnl_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r1\\MSFT\\03_output\\analytical_pnl.csv",
+      "sha256": "ED35DEA10A05072AE4434CFD1442E4BB0FFE87C4E2FFE386702DB75C2758AEAC"
+    },
+    {
+      "id": "reconciliation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r1\\MSFT\\03_output\\reconciliation_checks.csv",
+      "sha256": "E63747C2E1F64203934A097106D5053247A3C21E22D39F7445F0DE40EF14F0A9"
+    },
+    {
+      "id": "packet_identity",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\evidence\\finding_01_movement-i1-1-control.md",
+      "bad_refs": []
+    },
+    {
+      "id": "accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "source_locator",
+      "status": "PASS",
+      "critical": true,
+      "bad_refs": []
+    },
+    {
+      "id": "payload_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "payload_accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "period_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "finding_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "result_schema",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "evidence_refs",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "narrative_numeric_free",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "period_sign_span",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "observed_movement",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "payload observed movement differs from deterministic context"
+    },
+    {
+      "id": "reconciliation",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "reconciliation does not match deterministic product calculation"
+    },
+    {
+      "id": "expected_checkpoint",
+      "status": "PASS",
+      "critical": false,
+      "reason": "computable bridge exposes target, periods, and observed amount",
+      "definition_kind": "deterministic_reconciliation_context"
+    },
+    {
+      "id": "quantification",
+      "status": "NOT_RUN",
+      "critical": false,
+      "reason": "no quantified driver was disclosed"
+    },
+    {
+      "id": "expansion",
+      "status": "NOT_RUN",
+      "critical": false,
+      "reason": "query expansion was absent or not completed"
+    },
+    {
+      "id": "normalized_result",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "completed workflow returned no normalized result"
+    }
+  ],
+  "declared_checks": [
+    {
+      "id": "packet_identity",
+      "name": "Packet identity",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "F11CBAAF594CFC7BC6A4FE2FB1A012401354F44CDAFAA43163AA59A86E4DE148",
+      "observed_check_count": 1
+    },
+    {
+      "id": "accession",
+      "name": "Accession",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "F76306B3F89C63290342001DB33723652534F65F59FAD461AB4A4779651746BB",
+      "observed_check_count": 1
+    },
+    {
+      "id": "source_locator",
+      "name": "Source locator",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "AF8C09FB1AB92F23DDE4DFB7DF4E61409403150020C04087A53B34B03B479464",
+      "observed_check_count": 1
+    },
+    {
+      "id": "result_schema",
+      "name": "Result schema",
+      "critical": true,
+      "status": "PASS",
+      "reason": null,
+      "definition_hash": "4A48018E1517636B7D8DE9E81D021807CF7B416541DE5ECDEBD7B6D3445C8AB3",
+      "observed_check_count": 1
+    },
+    {
+      "id": "evidence_refs",
+      "name": "Evidence references",
+      "critical": true,
+      "status": "FAIL",
+      "reason": "driver description contains unsupported named entity: contributed",
+      "definition_hash": "3D8ABD5A92A90C6729CFB7DD0199943B5BA4F0BC2E0A48E3029F4EFEE043B218",
+      "observed_check_count": 1
+    },
+    {
+      "id": "narrative_numeric_free",
+      "name": "Narrative claims",
+      "critical": true,
+      "status": "FAIL",
+      "reason": "driver description contains unsupported named entity: contributed",
+      "definition_hash": "786EF4CCB10284DD3FADEF232293E3BCAC9DCB3E09F43344BBEEEB84E8707871",
+      "observed_check_count": 1
+    },
+    {
+      "id": "period_sign_span",
+      "name": "Period/sign/span",
+      "critical": true,
+      "status": "FAIL",
+      "reason": "driver description contains unsupported named entity: contributed",
+      "definition_hash": "1D1D564A73329C47411107579A56F5C4C64A757CA36F980C3D0E2FBDD42C94B1",
+      "observed_check_count": 1
+    },
+    {
+      "id": "observed_movement",
+      "name": "Observed movement",
+      "critical": true,
+      "status": "FAIL",
+      "reason": "payload observed movement differs from deterministic context",
+      "definition_hash": "6CC7279637FD202B61522FA108AE8527E4BE756CE7000AC5465DBD2640EC348D",
+      "observed_check_count": 1
+    },
+    {
+      "id": "reconciliation",
+      "name": "Deterministic reconciliation",
+      "critical": true,
+      "status": "FAIL",
+      "reason": "reconciliation does not match deterministic product calculation",
+      "definition_hash": "42CB831F31F39BD6E9C342DE6593F7AE404B4FC9A9CE5636B8480DC9E5EC28A3",
+      "observed_check_count": 1
+    },
+    {
+      "id": "quantification",
+      "name": "Quantification",
+      "critical": false,
+      "status": "NOT_RUN",
+      "reason": "no quantified driver was disclosed",
+      "definition_hash": "ECCACE54D628C0D5180D6AB5EAA47D58C4F74C0283079BAD390284F9C70AA9DE",
+      "observed_check_count": 1
+    },
+    {
+      "id": "expansion",
+      "name": "Grounded expansion",
+      "critical": false,
+      "status": "NOT_RUN",
+      "reason": "query expansion was absent or not completed",
+      "definition_hash": "94B1907C8584FF50110BAD9E4A9867F40599312BF2CE2B32E84C2D180803D9A7",
+      "observed_check_count": 1
+    },
+    {
+      "id": "expected_checkpoint",
+      "name": "Case checkpoint",
+      "critical": false,
+      "status": "PASS",
+      "reason": "computable bridge exposes target, periods, and observed amount",
+      "definition_hash": "BB00ED4F032E7157E4E87E37CE9A1F73D427221F2A036DD25E2B2E2C2A220BB3",
+      "observed_check_count": 1
+    }
+  ],
+  "normalized_result": null,
+  "artifacts": [
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json",
+      "kind": "frozen_investigation",
+      "sha256": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF",
+      "size": 41717
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_openai_nonoperating_quantified\\stdout.txt",
+      "kind": "stdout",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_openai_nonoperating_quantified\\stderr.txt",
+      "kind": "stderr",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    }
+  ],
+  "calls": {
+    "product": 0,
+    "judge": 0,
+    "retries": 0
+  },
+  "execution": {
+    "product_model": "gpt-5.6-luna",
+    "product_reasoning_effort": "high",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "high"
+  },
+  "frozen_inputs": {
+    "source_artifact": "data/MSFT/01_source/edgar/filings/0001193125-26-323660.txt",
+    "source_manifest_artifact": "data/MSFT/01_source/edgar/manifest.json",
+    "scan_artifact": "data/live-closed-world-proof-r1/MSFT/03_output/analysis/analytical_scan_20260827T175543203180Z.json",
+    "investigation_artifact": "data/live-movement-explanation-retrieval-i1/MSFT/03_output/analysis/filing_investigation_01_movement-i1-1-control.json",
+    "evidence_artifact": "data/live-movement-explanation-retrieval-i1/MSFT/03_output/evidence/finding_01_movement-i1-1-control.md",
+    "analytical_pnl_artifact": "data/live-closed-world-proof-r1/MSFT/03_output/analytical_pnl.csv",
+    "reconciliation_artifact": "data/live-closed-world-proof-r1/MSFT/03_output/reconciliation_checks.csv",
+    "segment_analytics_artifact": null,
+    "segment_reconciliation_artifact": null,
+    "accession": "0001193125-26-323660",
+    "filing_period": "2026-06-30",
+    "finding_rank": 1,
+    "finding_refs": [
+      "L12",
+      "L13",
+      "L15"
+    ]
+  },
+  "case_dir": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\06-gate-repair\\evidence\\offline-proof-final\\20260830T120717604580Z\\cases\\msft_openai_nonoperating_quantified",
+  "definition": {
+    "case_hash": "d5540bfd43206808dc4dadf0e5b10fb7ebfc660a780305082b2b4119d2b82447",
+    "rubric_hash": "545c6fbfd79f4d8c71fa6f2a2c131c5b7b45a2263229713afd540de7e064e171",
+    "check_hash": "3be0dda359047f3347185939e95960450b84ec3e158eb321152f088893604773",
+    "source_hashes": {
+      "source": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68",
+      "source_manifest": "3942859034A9DA686A26F657B79965F16D1A982F5390806145A3EFD4F65692B3",
+      "scan": "D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4",
+      "investigation": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF",
+      "evidence": "63685B3412F9976578474976320B79F2D333E449B4332F28E99BC99F8F86A694",
+      "analytical_pnl": "ED35DEA10A05072AE4434CFD1442E4BB0FFE87C4E2FFE386702DB75C2758AEAC",
+      "reconciliation": "E63747C2E1F64203934A097106D5053247A3C21E22D39F7445F0DE40EF14F0A9",
+      "segment_analytics": null,
+      "segment_reconciliation": null
+    }
+  },
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "4E7484ABB39634A94D243E80341172601860B1023251B9C0BCAC5D8EFFC5F09D",
+    "relevant_untracked_count": 183,
+    "error": null
+  },
+  "metadata": {
+    "execution_mode": "frozen_replay",
+    "source_artifact": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json"
+  },
+  "payload_status": "completed",
+  "state_isolation": {
+    "before": {
+      "root": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\03_output",
+      "file_count": 1225,
+      "sha256": "5A072446E41DA467C8ED93F3A876AF42C44CD4A2D557735860517C129D8C2689"
+    },
+    "after": {
+      "root": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\03_output",
+      "file_count": 1225,
+      "sha256": "5A072446E41DA467C8ED93F3A876AF42C44CD4A2D557735860517C129D8C2689"
+    },
+    "unchanged": true
+  }
+}

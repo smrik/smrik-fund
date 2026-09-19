@@ -1,0 +1,13 @@
+{
+  "name": "smrik-fund-spreadsheet-compat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe": "node fixture.mjs probe",
+    "build": "node fixture.mjs build",
+    "verify": "node fixture.mjs verify"
+  },
+  "dependencies": {
+    "@mog-sdk/sdk": "0.10.7"
+  }
+}

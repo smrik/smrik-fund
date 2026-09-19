@@ -19,6 +19,22 @@ RESTRUCTURING_SEARCH_QUERIES = (
 )
 
 MAX_EVIDENCE_ITEMS = 20
+# Generic note-language cues. Rank only; never issuer- or line-specific.
+_NOTE_CUES = (
+	"increased",
+	"decrease",
+	"decreased",
+	"driven by",
+	"due to",
+	"offset by",
+	"primarily",
+	"included",
+	"impairment",
+	"gain",
+	"loss",
+	"comprise",
+	"consists of",
+)
 
 _ITEM_HEADER = re.compile(r"^###\s+(E[1-9]\d*)\s*$")
 _ANY_ITEM_HEADER = re.compile(r"^###\s+E\S*\s*$")
@@ -154,6 +170,13 @@ def _literal_search_sections(filing: Any, query: str) -> list[Any]:
 	return matched
 
 
+def _note_rank(excerpt: str) -> tuple[int, int]:
+	"""Prefer longer note prose with movement language over short table rows."""
+	text = excerpt.casefold() if isinstance(excerpt, str) else ""
+	cues = sum(1 for cue in _NOTE_CUES if cue in text)
+	return (-cues, -len(text.strip()))
+
+
 def _section_name(section: Any, loc: object) -> str:
 	for name in ("section", "title", "name"):
 		value = getattr(section, name, None)
@@ -287,18 +310,26 @@ def _retrieve_filing_evidence(
 					"section": " | ".join(section_names),
 				}
 			)
-			if literal and len(items) > MAX_EVIDENCE_ITEMS:
-				raise FilingEvidenceError(
-					f"literal retrieval exceeded {MAX_EVIDENCE_ITEMS} evidence items"
-				)
 
-	items.sort(
-		key=lambda item: (
-			item["source_offset_start"],
-			item["query_index"],
-			str(item["search_locs"]),
+	if literal:
+		items.sort(
+			key=lambda item: (
+				*_note_rank(str(item.get("excerpt") or "")),
+				item["source_offset_start"],
+				item["query_index"],
+				str(item["search_locs"]),
+			)
 		)
-	)
+		if len(items) > MAX_EVIDENCE_ITEMS:
+			items = items[:MAX_EVIDENCE_ITEMS]
+	else:
+		items.sort(
+			key=lambda item: (
+				item["source_offset_start"],
+				item["query_index"],
+				str(item["search_locs"]),
+			)
+		)
 	for number, item in enumerate(items, start=1):
 		item["evidence_id"] = f"E{number}"
 	topic = " ".join(topic.split())

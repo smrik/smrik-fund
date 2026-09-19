@@ -72,6 +72,9 @@ _SOURCE_COLUMNS = (
 	"status_message",
 	"segment_ref",
 )
+_SOURCE_IDENTITY_SNAPSHOT_COLUMNS = tuple(
+	column for column in _SOURCE_COLUMNS if column != "segment_ref"
+)
 
 
 class SegmentAnalyticsError(RuntimeError):
@@ -103,6 +106,27 @@ def _first_text(row: pd.Series, *columns: str) -> str:
 		if value:
 			return value
 	return ""
+
+
+def _source_identity_snapshot(
+	segments: pd.DataFrame,
+) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+	"""Capture source-grain identity before a persisted frame can be mutated."""
+	columns = tuple(
+		column
+		for column in _SOURCE_IDENTITY_SNAPSHOT_COLUMNS
+		if column in segments.columns
+	)
+	rows = tuple(
+		tuple(_text(row.get(column)) for column in columns)
+		for _, row in segments.iterrows()
+	)
+	return columns, rows
+
+
+def _set_source_identity_snapshot(segments: pd.DataFrame) -> pd.DataFrame:
+	segments.attrs["source_identity_snapshot"] = _source_identity_snapshot(segments)
+	return segments
 
 
 def _local(value: object) -> str:
@@ -461,6 +485,7 @@ def build_segment_analytics(
 	for column in _DERIVED_COLUMNS:
 		result[column] = float("nan")
 	if result.empty:
+		_set_source_identity_snapshot(result)
 		result.attrs["periods"] = periods
 		result.attrs["segment_reconciliation"] = pd.DataFrame()
 		return result
@@ -591,6 +616,7 @@ def build_segment_analytics(
 	result.attrs["segment_reconciliation"] = build_segment_reconciliation(
 		pnl, result, tolerance=tolerance
 	)
+	_set_source_identity_snapshot(result)
 	return result
 
 
@@ -812,7 +838,14 @@ def load_segment_analytics(
 				"persisted segment reconciliation is missing columns: "
 				+ ", ".join(missing_checks)
 			)
-	segments = assign_segment_refs(segments)
+	# Preserve refs from a persisted enriched artifact. Reassignment is retained
+	# only for older files that never stored refs at all; callers investigating an
+	# S## finding can then fail closed via the provenance marker below.
+	persisted_refs = "segment_ref" in segments and segments["segment_ref"].map(_text).ne("").any()
+	if not persisted_refs:
+		segments = assign_segment_refs(segments)
+	segments.attrs["segment_refs_persisted"] = bool(persisted_refs)
+	_set_source_identity_snapshot(segments)
 	segments.attrs["periods"] = tuple(
 		period
 		for period in segments["period"].dropna().astype(str).drop_duplicates()

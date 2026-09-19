@@ -1,0 +1,3 @@
+Command: PYTHONPATH=src C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests -q -p no:cacheprovider
+Result: 242 passed, 3 warnings, 84 subtests passed in 16.48s
+Exit code: 0

@@ -513,3 +513,71 @@ class StableEconomicIdentityTests(TestCase):
 			item_effect_on_line="increased_line",
 		))
 		self.assertEqual(current["version"].tolist(), [1])
+
+
+class IdentityLessAuditRowTests(TestCase):
+	"""An identity-less audit rejection must never brick the history file.
+
+	Regression for the 2026-08-26 A0025 row: a human rejection of a candidate
+	targeting a derived subtotal (no mintable identity) was written with the
+	identity_version stamp anyway, and the stamp alone read as a malformed v2
+	claim that failed the entire history closed.
+	"""
+
+	def _audit_rejection(self, *, status: str = "rejected") -> dict[str, object]:
+		return {
+			"adjustment_id": "A0025",
+			"version": 1,
+			"status": status,
+			"identity_version": "economic-adjustment-v2",
+			"candidate_identity": float("nan"),
+			"candidate_state": _canonical_json(
+				{
+					"amount_basis": "unknown",
+					"item_amount": None,
+					"item_effect_on_line": "decreased_line",
+				}
+			),
+			"target_row_key": float("nan"),
+			"target_line": "Operating income",
+			"period": PERIOD,
+			"item_amount": None,
+			"item_effect_on_line": "decreased_line",
+		}
+
+	def test_identity_less_rejection_with_version_stamp_stays_inert(self) -> None:
+		value = candidate()
+		history = pd.DataFrame(
+			[history_row(value, identity_for(value)), self._audit_rejection()]
+		)
+		self.assertTrue(_history_identity_complete(history))
+		current = resolve_current_adjustments(history)
+		self.assertEqual(current["adjustment_id"].tolist(), ["A0001"])
+
+	def test_identity_less_approval_with_version_stamp_fails_closed(self) -> None:
+		history = pd.DataFrame([self._audit_rejection(status="approved")])
+		with self.assertRaisesRegex(ValueError, "fail closed"):
+			resolve_current_adjustments(history)
+
+	def test_rejection_row_without_identity_does_not_claim_version(self) -> None:
+		from smrik_fund.main import _decision_history_row
+
+		row = _decision_history_row(
+			"MSFT",
+			{"adjustment_id": "A0031", "latest_version": 0},
+			{
+				"candidate": {
+					"target_line": "Operating income",
+					"period": PERIOD,
+					"item_amount": None,
+					"item_effect_on_line": "decreased_line",
+					"amount_basis": "unknown",
+				},
+				"candidate_identity": None,
+			},
+			status="rejected",
+			run_id="human-test",
+			reject_reason="non quantifiable",
+		)
+		self.assertIsNone(row["identity_version"])
+		self.assertIsNone(row["candidate_identity"])

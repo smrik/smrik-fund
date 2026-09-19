@@ -22,6 +22,7 @@ from smrik_fund.ingestion.adjustments import (
 	apply_adjustments,
 	resolve_current_adjustments,
 )
+from smrik_fund.ingestion.analytical_scan import AnalyticalScanFinding
 from smrik_fund.ingestion.discovery import DiscoveryResult, DiscoveryTopic
 from smrik_fund.ingestion.reviewer import ReviewResult
 from smrik_fund.ingestion.risk_gate import RiskGateConditions
@@ -242,7 +243,7 @@ class AdjustmentAnalysisTests(TestCase):
 
 			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 			self.assertIsNone(manifest["candidates"][0]["adjustment_id"])
-			self.assertEqual(manifest["candidates"][0]["final_status"], "human_review")
+			self.assertEqual(manifest["candidates"][0]["final_status"], "unresolved")
 			self.assertEqual(
 				manifest["candidates"][0]["application_status"], "not_applied"
 			)
@@ -307,7 +308,7 @@ class AdjustmentAnalysisTests(TestCase):
 				)
 
 			self.assertEqual(discovery.call_count, 1)
-			self.assertEqual(analyst.call_count, 1)
+			self.assertEqual(analyst.call_count, 2)
 			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 			self.assertNotIn("initial_analyst", manifest)
 			self.assertFalse(
@@ -388,6 +389,395 @@ class AdjustmentAnalysisTests(TestCase):
 				].iloc[0],
 				90.0,
 			)
+
+	def test_scan_path_applies_reviewer_revise_after_notes_retrieve(self) -> None:
+		finding = AnalyticalScanFinding(
+			rank=1,
+			title="R&D movement",
+			importance="high",
+			affected_line_refs=["L04"],
+			observation="Research and development increased.",
+			why_it_matters="May need notes.",
+			investigation_questions=["Why did research and development increase?"],
+		)
+		result = AnalystResult(
+			candidates=[
+				AnalystCandidate(
+					target_line="Research and development",
+					period="2025-06-30 (FY)",
+					item_amount=10.0,
+					item_effect_on_line="increased_line",
+					item_key="safe-fixture",
+					amount_basis="disclosed",
+					reason="Filing notes a disclosed item.",
+					evidence_refs=["E1"],
+				)
+			]
+		)
+		review = ReviewResult(
+			verdict="revise",
+			evidence_strength="medium",
+			amount_basis="disclosed",
+			judgment_level="medium",
+			calculation_valid=None,
+			target_valid=True,
+			item_effect_on_line="increased_line",
+			period_valid=True,
+			concerns=["Amount is the disclosed aggregate."],
+		)
+		corrected_result = AnalystResult(
+			candidates=[
+				AnalystCandidate(
+					target_line="Research and development",
+					period="2025-06-30 (FY)",
+					item_amount=4.0,
+					item_effect_on_line="increased_line",
+					item_key="safe-fixture",
+					amount_basis="disclosed",
+					reason="Corrected to the supported component.",
+					evidence_refs=["E1"],
+				)
+			]
+		)
+		recheck = ReviewResult(
+			verdict="accept",
+			evidence_strength="strong",
+			amount_basis="disclosed",
+			judgment_level="low",
+			calculation_valid=None,
+			target_valid=True,
+			item_effect_on_line="increased_line",
+			period_valid=True,
+			concerns=[],
+		)
+		packet = (
+			"Ticker: MSFT\nFiling accession: A1\nSource: https://example.test/sample.txt\n\n"
+			"### E1\nQuery: Research and development\n"
+			"Source: https://example.test/sample.txt\nSection: notes\n"
+			"Locator: accession A1; line 1\n\n"
+			"> Research and development increased due to a disclosed item.\n"
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch(
+					"smrik_fund.main.run_discovery",
+					side_effect=AssertionError("scan path must not call discovery"),
+				),
+				patch(
+					"smrik_fund.main.retrieve_filing_evidence",
+					return_value=(
+						packet,
+						{"filing_accession": "A1", "evidence_item_count": 1},
+					),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					side_effect=[
+						(result, {"run_id": "scan-apply", "model": "test"}),
+						(corrected_result, {"run_id": "scan-revision", "model": "test"}),
+					],
+				) as analyst_call,
+				patch(
+					"smrik_fund.main.run_reviewer",
+					side_effect=[
+						(review, {"run_id": "scan-apply"}),
+						(recheck, {"run_id": "scan-recheck"}),
+					],
+				) as reviewer_call,
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT",
+					make_integrated_pnl(),
+					"test-model",
+					"high",
+					output_root=root,
+					filing=Filing(),
+					findings=[finding],
+				)
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			self.assertEqual(manifest["candidates"][0]["review"]["verdict"], "accept")
+			self.assertEqual(manifest["candidates"][0]["final_status"], "approved")
+			self.assertEqual(manifest["candidates"][0]["application_status"], "applied")
+			self.assertEqual(analyst_call.call_count, 2)
+			self.assertEqual(reviewer_call.call_count, 2)
+			self.assertEqual(
+				analyst_call.call_args_list[1].kwargs["revision_context"]["topic"],
+				"R&D movement",
+			)
+			self.assertEqual(manifest["candidates"][0]["candidate"]["item_amount"], 4.0)
+			self.assertEqual(manifest["candidates"][0]["revision"]["status"], "accepted")
+			self.assertEqual(
+				manifest["candidates"][0]["revision"]["original_review"]["verdict"],
+				"revise",
+			)
+			record = manifest["candidates"][0]
+			self.assertTrue(Path(record["revision"]["original_review_path"]).name)
+			self.assertTrue(Path(record["revision"]["revised_review_path"]).name)
+			history = pd.read_csv(root / "MSFT" / "03_output" / "adjustment_history.csv")
+			self.assertEqual(len(history), 1)
+			self.assertEqual(history.loc[0, "item_amount"], 4.0)
+			self.assertEqual(history.loc[0, "line_delta"], -4.0)
+			adjusted = pd.read_csv(root / "MSFT" / "03_output" / "adjusted_pnl.csv")
+			self.assertEqual(
+				adjusted.loc[
+					adjusted["label"] == "Research and development",
+					"2025-06-30 (FY)",
+				].iloc[0],
+				96.0,
+			)
+
+	def test_revision_with_changed_identity_is_unresolved_and_not_rechecked(self) -> None:
+		finding = AnalyticalScanFinding(
+			rank=1,
+			title="R&D movement",
+			importance="high",
+			affected_line_refs=["L04"],
+			observation="Research and development increased.",
+			why_it_matters="May need notes.",
+			investigation_questions=["Why did research and development increase?"],
+		)
+		candidate = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
+			amount_basis="disclosed",
+			reason="Original proposal.",
+			evidence_refs=["E1"],
+		)
+		changed_identity = candidate.model_copy(update={"item_key": "other-fixture"})
+		revise = ReviewResult(
+			verdict="revise",
+			evidence_strength="medium",
+			amount_basis="disclosed",
+			judgment_level="medium",
+			calculation_valid=None,
+			target_valid=True,
+			item_effect_on_line="increased_line",
+			period_valid=True,
+			concerns=["Wrong economic subject."],
+		)
+		packet = (
+			"Ticker: MSFT\nFiling accession: A1\nSource: https://example.test/sample.txt\n\n"
+			"### E1\nQuery: Research and development\n"
+			"Source: https://example.test/sample.txt\nSection: notes\n"
+			"Locator: accession A1; line 1\n\n"
+			"> Research and development increased due to a disclosed item.\n"
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", side_effect=AssertionError),
+				patch(
+					"smrik_fund.main.retrieve_filing_evidence",
+					return_value=(packet, {"filing_accession": "A1", "evidence_item_count": 1}),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					side_effect=[
+						(AnalystResult(candidates=[candidate]), {"run_id": "original"}),
+						(AnalystResult(candidates=[changed_identity]), {"run_id": "revision"}),
+					],
+				) as analyst_call,
+				patch(
+					"smrik_fund.main.run_reviewer",
+					return_value=(revise, {"run_id": "original"}),
+				) as reviewer_call,
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT",
+					make_integrated_pnl(),
+					"test-model",
+					"high",
+					output_root=root,
+					filing=Filing(),
+					findings=[finding],
+				)
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			record = manifest["candidates"][0]
+			self.assertEqual(record["final_status"], "unresolved")
+			self.assertEqual(record["application_status"], "not_applied")
+			self.assertEqual(record["revision"]["status"], "unresolved")
+			self.assertIn("identity", record["revision"]["error"])
+			self.assertEqual(
+				record["revision"]["revised_candidate"]["item_key"],
+				"other-fixture",
+			)
+			self.assertTrue(Path(record["revision"]["revised_analysis_path"]).name)
+			self.assertEqual(analyst_call.call_count, 2)
+			self.assertEqual(reviewer_call.call_count, 1)
+			self.assertTrue(manifest["reported_equals_adjusted"])
+			self.assertFalse((root / "MSFT" / "03_output" / "adjustment_history.csv").exists())
+
+	def test_invalid_empty_revision_artifact_is_persisted(self) -> None:
+		finding = AnalyticalScanFinding(
+			rank=1,
+			title="R&D movement",
+			importance="high",
+			affected_line_refs=["L04"],
+			observation="Research and development increased.",
+			why_it_matters="May need notes.",
+			investigation_questions=["Why did research and development increase?"],
+		)
+		candidate = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
+			amount_basis="disclosed",
+			reason="Original proposal.",
+			evidence_refs=["E1"],
+		)
+		revise = ReviewResult(
+			verdict="revise",
+			evidence_strength="medium",
+			amount_basis="disclosed",
+			judgment_level="medium",
+			calculation_valid=None,
+			target_valid=True,
+			item_effect_on_line="increased_line",
+			period_valid=True,
+			concerns=["Correction required."],
+		)
+		packet = (
+			"Ticker: MSFT\nFiling accession: A1\nSource: https://example.test/sample.txt\n\n"
+			"### E1\nQuery: Research and development\n"
+			"Source: https://example.test/sample.txt\nSection: notes\n"
+			"Locator: accession A1; line 1\n\n"
+			"> Research and development increased due to a disclosed item.\n"
+		)
+		with TemporaryDirectory() as temporary_directory:
+			root = Path(temporary_directory)
+			with (
+				patch("smrik_fund.main.run_discovery", side_effect=AssertionError),
+				patch(
+					"smrik_fund.main.retrieve_filing_evidence",
+					return_value=(packet, {"filing_accession": "A1", "evidence_item_count": 1}),
+				),
+				patch(
+					"smrik_fund.main.run_analyst",
+					side_effect=[
+						(AnalystResult(candidates=[candidate]), {"run_id": "original"}),
+						(AnalystResult(candidates=[]), {"run_id": "revision"}),
+					],
+				) as analyst_call,
+				patch(
+					"smrik_fund.main.run_reviewer",
+					return_value=(revise, {"run_id": "original"}),
+				) as reviewer_call,
+			):
+				manifest_path = _run_adjustment_analysis(
+					"MSFT",
+					make_integrated_pnl(),
+					"test-model",
+					"high",
+					output_root=root,
+					filing=Filing(),
+					findings=[finding],
+				)
+			manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			record = manifest["candidates"][0]
+			revision = record["revision"]
+			saved_path = Path(revision["revised_analysis_path"])
+			self.assertEqual(record["final_status"], "unresolved")
+			self.assertEqual(revision["status"], "unresolved")
+			self.assertTrue(saved_path.is_file())
+			saved = json.loads(saved_path.read_text(encoding="utf-8"))
+			self.assertEqual(saved["result"]["candidates"], [])
+			self.assertEqual(
+				saved["metadata"]["revision_of"], revision["original_review_path"]
+			)
+			self.assertEqual(analyst_call.call_count, 2)
+			self.assertEqual(reviewer_call.call_count, 1)
+			self.assertTrue(manifest["reported_equals_adjusted"])
+			self.assertFalse((root / "MSFT" / "03_output" / "adjustment_history.csv").exists())
+
+	def test_revision_recheck_reject_or_repeat_stays_bounded_and_unapplied(self) -> None:
+		candidate = AnalystCandidate(
+			target_line="Research and development",
+			period=PERIOD,
+			item_amount=10.0,
+			item_effect_on_line="increased_line",
+			item_key="safe-fixture",
+			amount_basis="disclosed",
+			reason="Original proposal.",
+			evidence_refs=["E1"],
+		)
+		corrected = candidate.model_copy(update={"item_amount": 4.0})
+		packet = (
+			"Ticker: MSFT\nFiling accession: A1\nSource: https://example.test/sample.txt\n\n"
+			"### E1\nQuery: Research and development\n"
+			"Source: https://example.test/sample.txt\nSection: notes\n"
+			"Locator: accession A1; line 1\n\n"
+			"> Research and development increased due to a disclosed item.\n"
+		)
+		for verdict, expected_status in (("reject", "rejected"), ("revise", "unresolved")):
+			with self.subTest(verdict=verdict), TemporaryDirectory() as temporary_directory:
+				root = Path(temporary_directory)
+				initial_review = ReviewResult(
+					verdict="revise",
+					evidence_strength="medium",
+					amount_basis="disclosed",
+					judgment_level="medium",
+					calculation_valid=None,
+					target_valid=True,
+					item_effect_on_line="increased_line",
+					period_valid=True,
+					concerns=["Correct the amount."],
+				)
+				final_review = initial_review.model_copy(update={"verdict": verdict})
+				with (
+					patch("smrik_fund.main.run_discovery", side_effect=AssertionError),
+					patch(
+						"smrik_fund.main.retrieve_filing_evidence",
+						return_value=(packet, {"filing_accession": "A1", "evidence_item_count": 1}),
+					),
+					patch(
+						"smrik_fund.main.run_analyst",
+						side_effect=[
+							(AnalystResult(candidates=[candidate]), {"run_id": "original"}),
+							(AnalystResult(candidates=[corrected]), {"run_id": "revision"}),
+						],
+					) as analyst_call,
+					patch(
+						"smrik_fund.main.run_reviewer",
+						side_effect=[
+							(initial_review, {"run_id": "original"}),
+							(final_review, {"run_id": "recheck"}),
+						],
+					) as reviewer_call,
+				):
+					manifest_path = _run_adjustment_analysis(
+						"MSFT",
+						make_integrated_pnl(),
+						"test-model",
+						"high",
+						output_root=root,
+						filing=Filing(),
+						findings=[
+							AnalyticalScanFinding(
+								rank=1,
+								title="R&D movement",
+								importance="high",
+								affected_line_refs=["L04"],
+								observation="Research and development increased.",
+								why_it_matters="May need notes.",
+								investigation_questions=["Why did research and development increase?"],
+							)
+						],
+					)
+				manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+				record = manifest["candidates"][0]
+				self.assertEqual(record["final_status"], expected_status)
+				self.assertEqual(record["application_status"], "not_applied")
+				self.assertEqual(record["revision"]["status"], expected_status)
+				self.assertEqual(analyst_call.call_count, 2)
+				self.assertEqual(reviewer_call.call_count, 2)
+				self.assertTrue(manifest["reported_equals_adjusted"])
+				self.assertFalse((root / "MSFT" / "03_output" / "adjustment_history.csv").exists())
 
 	def test_frozen_approval_replays_from_persisted_history_exactly_once(self) -> None:
 		candidate = AnalystCandidate(
@@ -1421,11 +1811,11 @@ class AdjustmentAnalysisTests(TestCase):
 		)
 		self.assertIn("Financial assessment: Potential unusual item.", output)
 		self.assertIn("Unresolved issue / Reviewer concern: Amount unresolved.", output)
-		self.assertIn("Why not automatic: Reviewer requested revision", output)
+		self.assertNotIn("Why not automatic:", output)
 		self.assertNotIn("reviewer_verdict_revise", output)
 		self.assertIn("Reviewer verdict=revise", output)
-		self.assertIn("gate decision=human_review", output)
-		self.assertIn("final=human_review", output)
+		self.assertIn("gate decision=null", output)
+		self.assertIn("final=unresolved", output)
 		self.assertIn("application=not_applied", output)
 		self.assertNotIn("recurr", output.casefold())
 		self.assertNotIn("Excerpt: Fixture one.", output)
@@ -1497,6 +1887,31 @@ class AdjustmentAnalysisTests(TestCase):
 		user_content = client.responses.parse.call_args.kwargs["input"][1]["content"]
 		self.assertIn("Frozen evidence packet", user_content)
 		self.assertIn("Revenue", user_content)
+
+	def test_revision_context_is_sent_as_bounded_data(self) -> None:
+		client = Mock()
+		client.responses.parse.return_value = SimpleNamespace(
+			output_parsed=AnalystResult(candidates=[])
+		)
+		context = {
+			"topic": "Fixture review",
+			"original_candidate": {"item_amount": 10.0},
+			"reviewer": {"verdict": "revise", "concerns": ["Correct amount."]},
+		}
+
+		_, metadata = run_analyst(
+			"MSFT",
+			make_pnl(),
+			"Frozen evidence packet",
+			client=client,
+			revision_context=context,
+		)
+
+		payload = json.loads(
+			client.responses.parse.call_args.kwargs["input"][1]["content"]
+		)
+		self.assertEqual(payload["revision_context"], context)
+		self.assertTrue(metadata["revision"])
 
 	def test_missing_pnl_values_are_json_null(self) -> None:
 		pnl = make_pnl()

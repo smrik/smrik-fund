@@ -1,0 +1,351 @@
+{
+  "case_id": "msft_openai_nonoperating_quantified",
+  "ticker": "MSFT",
+  "suites": [
+    "regression"
+  ],
+  "workflow": "filing",
+  "case_status": "READY",
+  "capability": "AVAILABLE",
+  "case_blocked_reason": null,
+  "product_status": "COMPLETED",
+  "product_valid": false,
+  "judge_status": "JUDGE_SKIPPED",
+  "qualitative_verdict": null,
+  "checks": [
+    {
+      "id": "source_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\MSFT\\01_source\\edgar\\filings\\0001193125-26-323660.txt",
+      "sha256": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68"
+    },
+    {
+      "id": "scan_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-closed-world-proof-r1\\MSFT\\03_output\\analysis\\analytical_scan_20260827T175543203180Z.json",
+      "sha256": "D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4"
+    },
+    {
+      "id": "investigation_artifact",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json",
+      "sha256": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF"
+    },
+    {
+      "id": "packet_identity",
+      "status": "PASS",
+      "critical": true,
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\evidence\\finding_01_movement-i1-1-control.md",
+      "bad_refs": []
+    },
+    {
+      "id": "accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "source_locator",
+      "status": "PASS",
+      "critical": true,
+      "bad_refs": []
+    },
+    {
+      "id": "payload_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "payload_accession",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "period_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "finding_identity",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "result_schema",
+      "status": "PASS",
+      "critical": true
+    },
+    {
+      "id": "evidence_refs",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "narrative_numeric_free",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "period_sign_span",
+      "status": "FAIL",
+      "critical": true,
+      "reason": "driver description contains unsupported named entity: contributed"
+    },
+    {
+      "id": "reconciliation",
+      "status": "PASS",
+      "critical": true,
+      "status_value": "partial",
+      "not_computable": false
+    }
+  ],
+  "normalized_result": {
+    "status": "COMPLETED",
+    "finding_rank": 1,
+    "finding_refs": [
+      "L12",
+      "L13",
+      "L15"
+    ],
+    "observed_movement": [
+      {
+        "line_ref": "L12",
+        "source_label": "Other income (expense), net",
+        "concept": "us-gaap_NonoperatingIncomeExpense",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "periods": {
+          "2026-06-30 (FY)": 10697000000.0,
+          "2025-06-30 (FY)": -4901000000.0,
+          "2024-06-30 (FY)": -1646000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 15598000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": -3255000000.0
+          }
+        ]
+      },
+      {
+        "line_ref": "L13",
+        "source_label": "Income before income taxes",
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "standard_concept": "PretaxIncomeLoss",
+        "periods": {
+          "2026-06-30 (FY)": 165934000000.0,
+          "2025-06-30 (FY)": 123627000000.0,
+          "2024-06-30 (FY)": 107787000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 42307000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 15840000000.0
+          }
+        ]
+      },
+      {
+        "line_ref": "L15",
+        "source_label": "Net income",
+        "concept": "us-gaap_NetIncomeLoss",
+        "standard_concept": "NetIncome",
+        "periods": {
+          "2026-06-30 (FY)": 133749000000.0,
+          "2025-06-30 (FY)": 101832000000.0,
+          "2024-06-30 (FY)": 88136000000.0
+        },
+        "year_over_year": [
+          {
+            "period": "2026-06-30 (FY)",
+            "previous_period": "2025-06-30 (FY)",
+            "difference": 31917000000.0
+          },
+          {
+            "period": "2025-06-30 (FY)",
+            "previous_period": "2024-06-30 (FY)",
+            "difference": 13696000000.0
+          }
+        ]
+      }
+    ],
+    "drivers": [
+      {
+        "description": "Investments in OpenAI contributed net gains to other income (expense), net in the latest fiscal year.",
+        "amount": null,
+        "amount_unit": "unknown",
+        "period": null,
+        "effect": "unknown",
+        "amount_basis": "unquantified",
+        "evidence_refs": [
+          "E1"
+        ]
+      },
+      {
+        "description": "Investments in OpenAI contributed net losses to other income (expense), net in the prior fiscal year.",
+        "amount": null,
+        "amount_unit": "unknown",
+        "period": null,
+        "effect": "unknown",
+        "amount_basis": "unquantified",
+        "evidence_refs": [
+          "E1"
+        ]
+      },
+      {
+        "description": "The dilution gain from the OpenAI Recapitalization contributed to other income (expense), net in the latest fiscal year.",
+        "amount": null,
+        "amount_unit": "unknown",
+        "period": null,
+        "effect": "unknown",
+        "amount_basis": "unquantified",
+        "evidence_refs": [
+          "E2"
+        ]
+      }
+    ],
+    "reconciliation": {
+      "status": "partial",
+      "target_line_ref": "L12",
+      "target_source_label": "Other income (expense), net",
+      "period": "2026-06-30 (FY)",
+      "previous_period": "2025-06-30 (FY)",
+      "observed_amount": 15598000000.0,
+      "observed_unit": "dollars",
+      "observed_amount_comparable": 15.598,
+      "comparison_unit": "usd_billions",
+      "known_disclosed_contribution": 11.3,
+      "known_disclosed_unit": "usd_billions",
+      "unresolved_difference": 4.298,
+      "difference_is_reported_plug": false,
+      "disclosed_facts": [
+        {
+          "target_line_ref": "L12",
+          "source_label": "Other income (expense), net",
+          "amount": 6.5,
+          "amount_unit": "usd_billions",
+          "period": "2026-06-30 (FY)",
+          "source_year": "2026",
+          "effect": "increased_line",
+          "evidence_span": "Other income (expense), net included $6.5 billion of net gains and $4.8 billion of net losses for fiscal years 2026 and 2025, respectively",
+          "evidence_refs": [
+            "E1",
+            "E2"
+          ],
+          "extraction_basis": "exact_two_period_respectively_pair"
+        },
+        {
+          "target_line_ref": "L12",
+          "source_label": "Other income (expense), net",
+          "amount": -4.8,
+          "amount_unit": "usd_billions",
+          "period": "2025-06-30 (FY)",
+          "source_year": "2025",
+          "effect": "decreased_line",
+          "evidence_span": "Other income (expense), net included $6.5 billion of net gains and $4.8 billion of net losses for fiscal years 2026 and 2025, respectively",
+          "evidence_refs": [
+            "E1",
+            "E2"
+          ],
+          "extraction_basis": "exact_two_period_respectively_pair"
+        }
+      ],
+      "reason_code": "exact_two_period_respectively_pair",
+      "reason": "exact source disclosure explains a validated portion of the movement",
+      "observed_current_amount": 10697000000.0,
+      "observed_previous_amount": -4901000000.0
+    },
+    "metadata": {
+      "ticker": "MSFT",
+      "filing_accession": "0001193125-26-323660",
+      "filing_period": "2026-06-30",
+      "schema_version": "filing-investigation-v3"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json",
+      "kind": "frozen_investigation",
+      "sha256": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF",
+      "size": 41717
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\02-implementation\\evidence\\offline-all\\20260830T101752494309Z\\cases\\msft_openai_nonoperating_quantified\\stdout.txt",
+      "kind": "stdout",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    },
+    {
+      "path": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\02-implementation\\evidence\\offline-all\\20260830T101752494309Z\\cases\\msft_openai_nonoperating_quantified\\stderr.txt",
+      "kind": "stderr",
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "size": 0
+    }
+  ],
+  "calls": {
+    "product": 0,
+    "judge": 0,
+    "retries": 0
+  },
+  "execution": {
+    "product_model": "gpt-5.6-luna",
+    "product_reasoning_effort": "high",
+    "judge_model": "gpt-5.6-terra",
+    "judge_reasoning_effort": "high"
+  },
+  "frozen_inputs": {
+    "source_artifact": "data/MSFT/01_source/edgar/filings/0001193125-26-323660.txt",
+    "scan_artifact": "data/live-closed-world-proof-r1/MSFT/03_output/analysis/analytical_scan_20260827T175543203180Z.json",
+    "investigation_artifact": "data/live-movement-explanation-retrieval-i1/MSFT/03_output/analysis/filing_investigation_01_movement-i1-1-control.json",
+    "segment_analytics_artifact": null,
+    "segment_reconciliation_artifact": null,
+    "accession": "0001193125-26-323660",
+    "filing_period": "2026-06-30",
+    "finding_rank": 1,
+    "finding_refs": [
+      "L12",
+      "L13",
+      "L15"
+    ]
+  },
+  "case_dir": "C:\\Projects\\finance\\smrik-fund\\Lunacy\\runs\\e2e-eval-harness\\phases\\02-implementation\\evidence\\offline-all\\20260830T101752494309Z\\cases\\msft_openai_nonoperating_quantified",
+  "definition": {
+    "case_hash": "5357a749e341fd2626ea2f6a626eebc0c7e6f2e7ad520eb1688dff19d1554b68",
+    "rubric_hash": "545c6fbfd79f4d8c71fa6f2a2c131c5b7b45a2263229713afd540de7e064e171",
+    "check_hash": "f8393190d1a281171d84435da58feac700d5259523fccec0a7a62bcaf15422c7",
+    "source_hashes": {
+      "source": "6DE4C42EBBF10AE75FCC6A5ED021823AADC6127D6471C84CB7A3BEAFAD1E1E68",
+      "scan": "D7FAA260B310ED4022E08F9C36FED1C0D124A8948135DEFBE631F1AB825997C4",
+      "investigation": "E9EE016634C282AA3FDAC366B9C93F1508A0B63716351D0D9083AE7F1B8F91CF",
+      "segment_analytics": null,
+      "segment_reconciliation": null
+    }
+  },
+  "repository": {
+    "head_sha": "931d37c58e6637cc1306378690901966a6ccea33",
+    "dirty": true,
+    "status_count": 18,
+    "tracked_diff_sha256": "CA63BB414C97C08C71FEB376D672588CBC1C81C3FFDBCE45492E4FA2EC449EA1",
+    "relevant_untracked_sha256": "0FA761C89D0CCA1FAC8E05A8D2DBECB39D083A17EEECA30136FF612CF987F328",
+    "relevant_untracked_count": 175,
+    "error": null
+  },
+  "metadata": {
+    "execution_mode": "frozen_replay",
+    "source_artifact": "C:\\Projects\\finance\\smrik-fund\\data\\live-movement-explanation-retrieval-i1\\MSFT\\03_output\\analysis\\filing_investigation_01_movement-i1-1-control.json"
+  },
+  "payload_status": "completed"
+}

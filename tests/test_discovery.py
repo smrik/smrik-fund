@@ -316,10 +316,10 @@ class DiscoveryTests(TestCase):
 				).exists()
 		topic = manifest["topics"][0]
 		self.assertEqual(discover.call_count, 1)
-		self.assertEqual(analyst.call_count, 1)
+		self.assertEqual(analyst.call_count, 2)
 		self.assertEqual(reviewer.call_count, 1)
-		self.assertEqual(topic["status"], "human_review")
-		self.assertEqual(topic["candidates"][0]["final_status"], "human_review")
+		self.assertEqual(topic["status"], "unresolved")
+		self.assertEqual(topic["candidates"][0]["final_status"], "unresolved")
 		self.assertEqual(topic["candidates"][0]["application_status"], "not_applied")
 		self.assertTrue(manifest["reported_equals_adjusted"])
 		self.assertFalse(history_exists)

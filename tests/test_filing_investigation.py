@@ -29,18 +29,21 @@ from smrik_fund.ingestion.filing_investigation import (
 	_select_initial_queries,
 	build_finding_plan_context,
 	build_initial_search_plan,
+	build_observed_movement,
 	extract_period_paired_disclosures,
 	investigate_finding,
 	load_saved_scan,
 	reconcile_disclosed_amounts,
 	reconcile_period_pair_bridge,
 	render_finding_investigation_summary,
+	resolve_segment_references,
 	run_financial_investigation,
 	run_search_plan,
 	validate_financial_investigation,
 	validate_query_expansion,
 )
 from smrik_fund.ingestion.segments import (
+	assign_segment_refs,
 	load_segment_analytics,
 	save_segment_analytics,
 	save_segment_reconciliation,
@@ -131,6 +134,65 @@ def make_segments() -> tuple[pd.DataFrame, pd.DataFrame]:
 	return segments, checks
 
 
+def make_investigable_segments() -> pd.DataFrame:
+	segments, _checks = make_segments()
+	segments = assign_segment_refs(segments)
+	segments.attrs["segment_refs_persisted"] = True
+	segments["value"] = segments["reported_value"]
+	segments["period_end"] = segments["period"].str[:10]
+	segments["period_start"] = segments["period_end"].map(
+		{
+			"2026-06-30": "2025-07-01",
+			"2025-06-30": "2024-07-01",
+			"2024-06-30": "2023-07-01",
+		}
+	)
+	segments["fiscal_year"] = segments["period_end"].str[:4]
+	segments["fiscal_period"] = "FY"
+	segments["unit"] = "USD"
+	segments["currency"] = "USD"
+	segments["source_locator"] = ""
+	segments["period_type"] = "duration"
+	segments["filing_date"] = "2026-07-30"
+	segments["form_type"] = "10-K"
+	segments["statement_role"] = "role"
+	segments["concept"] = segments["metric"].map(
+		{
+			"Revenue": "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+			"OperatingIncomeLoss": "us-gaap:OperatingIncomeLoss",
+		}
+	)
+	segments["standard_concept"] = ""
+	segments["accession"] = "A1"
+	segments["source_url"] = "https://example.test/msft.htm"
+	segments["fact_id"] = [f"fact-{index}" for index in range(len(segments))]
+	segments["context_ref"] = segments["period_end"].map(
+		{
+			"2026-06-30": "context-2026",
+			"2025-06-30": "context-2025",
+			"2024-06-30": "context-2024",
+		}
+	)
+	segments["reported_basis"] = "reported"
+	segments.loc[
+		segments["metric"].eq("Revenue") & segments["period"].ne(PERIODS[-1]),
+		"revenue_share_change_bps",
+	] = 0.0
+	segments.loc[
+		segments["metric"].eq("Revenue") & segments["period"].ne(PERIODS[-1]),
+		"revenue_growth_contribution",
+	] = 1.0
+	segments.loc[
+		segments["metric"].eq("OperatingIncomeLoss") & segments["period"].ne(PERIODS[-1]),
+		"operating_margin_bps_change",
+	] = 0.0
+	segments.loc[
+		segments["metric"].eq("OperatingIncomeLoss") & segments["period"].ne(PERIODS[-1]),
+		"operating_income_growth_contribution",
+	] = None
+	return segments
+
+
 class FakeSection:
 	def __init__(self, doc: str, loc: int = 42) -> None:
 		self.doc = doc
@@ -182,7 +244,7 @@ class FakeResponsesClient:
 						evidence_refs=["E1"],
 					)
 				],
-				interpretation="The supplied passage attributes the movement to demand.",
+				interpretation="The supplied passage reports the movement driven by demand.",
 				interpretation_evidence_refs=["E1"],
 				unresolved_remainder="The unquantified contribution remains unresolved.",
 				unresolved_remainder_evidence_refs=["E1"],
@@ -1029,10 +1091,175 @@ class FilingInvestigationTests(TestCase):
 				),
 			)
 
+	def test_causal_wording_must_match_cited_evidence_verbatim(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The movement increased because of demand.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(FilingInvestigationError, "unsupported causal claim"):
+			validate_financial_investigation(
+				result,
+				self.evidence_packet("The movement increased driven by demand."),
+			)
+
+	def test_causal_wording_with_exact_source_phrase_is_accepted(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The movement increased driven by demand.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		validated = validate_financial_investigation(
+			result,
+			self.evidence_packet("The movement increased driven by demand."),
+		)
+		self.assertEqual(validated.interpretation, result.interpretation)
+
+	def test_explain_inflection_requires_exact_source_wording(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The filing explains the movement.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported causal claim"
+		):
+			validate_financial_investigation(
+				result, self.evidence_packet("The filing reports the movement.")
+			)
+
+	def test_causal_inflections_require_exact_source_wording(self) -> None:
+		cases = (
+			("The movement is driving demand.", "The movement is driven by demand."),
+			("The movement led to demand.", "The movement drove demand."),
+		)
+		for interpretation, excerpt in cases:
+			with self.subTest(interpretation=interpretation):
+				result = FinancialInvestigationResult(
+					disclosed_drivers=[],
+					interpretation=interpretation,
+					interpretation_evidence_refs=["E1"],
+					unresolved_remainder="Other components remain unresolved.",
+					unresolved_remainder_evidence_refs=["E1"],
+					explanation="The filing leaves other components unresolved.",
+					explanation_evidence_refs=["E1"],
+				)
+				with self.assertRaisesRegex(
+					FilingInvestigationError, "unsupported causal claim"
+				):
+					validate_financial_investigation(
+						result, self.evidence_packet(excerpt)
+					)
+
+	def test_causal_wording_must_be_in_every_cited_excerpt(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The movement increased driven by demand.",
+			interpretation_evidence_refs=["E1", "E2"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported causal claim"
+		):
+			validate_financial_investigation(
+				result,
+				self.paired_evidence_packet(
+					["The movement increased driven by demand.", "The filing reports movement."]
+				),
+			)
+
+	def test_lowercase_unsupported_named_entity_fails_closed(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="azure",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing reports the movement.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported named entity"
+		):
+			validate_financial_investigation(
+				result, self.paired_evidence_packet(["The filing reports the movement."])
+			)
+
+	def test_named_entity_must_be_supported_by_every_cited_excerpt(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The Azure movement is reported.",
+			interpretation_evidence_refs=["E1", "E2"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing reports the movement.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported named entity"
+		):
+			validate_financial_investigation(
+				result,
+				self.paired_evidence_packet(
+					["The Azure movement is reported.", "The filing reports the movement."]
+				),
+			)
+
+	def test_causal_claim_requires_complete_source_clause(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="Revenue was driven by Azure.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing reports the movement.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported causal claim"
+		):
+			validate_financial_investigation(
+				result,
+				self.evidence_packet("Revenue increased driven by Azure."),
+			)
+
 	def test_unsupported_named_entity_fails_closed(self) -> None:
 		result = FinancialInvestigationResult(
 			disclosed_drivers=[],
 			interpretation="The Azure product is disclosed.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The filing leaves other components unresolved.",
+			explanation_evidence_refs=["E1"],
+		)
+		with self.assertRaisesRegex(
+			FilingInvestigationError, "unsupported named entity"
+		):
+			validate_financial_investigation(
+				result,
+				self.evidence_packet("The filing disclosed an investment gain."),
+			)
+
+	def test_sentence_initial_unsupported_named_entity_fails_closed(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="Contoso",
 			interpretation_evidence_refs=["E1"],
 			unresolved_remainder="Other components remain unresolved.",
 			unresolved_remainder_evidence_refs=["E1"],
@@ -1055,7 +1282,7 @@ class FilingInvestigationTests(TestCase):
 					evidence_refs=["E1"],
 				)
 			],
-			interpretation="The disclosure partially explains the movement.",
+		interpretation="The disclosure partially describes the movement.",
 			interpretation_evidence_refs=["E1"],
 			unresolved_remainder="A component remains unresolved.",
 			unresolved_remainder_evidence_refs=["E1"],
@@ -1072,7 +1299,7 @@ class FilingInvestigationTests(TestCase):
 		)
 		self.assertEqual(
 			validated.interpretation,
-			"The disclosure partially explains the movement.",
+			"The disclosure partially describes the movement.",
 		)
 
 	def test_unrelated_adjacent_year_downgrades_amount_period_claim(self) -> None:
@@ -1370,16 +1597,258 @@ class FilingInvestigationTests(TestCase):
 		):
 			self.assertFalse(hasattr(investigation, name), name)
 
-	def test_segment_ref_filing_investigation_fails_closed_before_pnl_indexing(
+	def test_segment_ref_filing_investigation_requires_persisted_analytics(
 		self,
 	) -> None:
 		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
 		with self.assertRaisesRegex(
-			FilingInvestigationError, "S-ref filing investigation is unsupported"
+			FilingInvestigationError, "S refs require persisted segment analytics"
 		):
 			investigate_finding(
 				"MSFT", make_pnl(), FakeFiling(), segment_finding, client=Mock()
 			)
+
+	def test_segment_ref_resolves_reported_rows_and_saved_context(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		resolved = resolve_segment_references(
+			make_pnl(), segment_finding, make_investigable_segments(),
+			expected_filing_accession="A1",
+		)
+		row = resolved["S01"]
+		self.assertEqual(row["reference_type"], "segment")
+		self.assertEqual(row["metric"], "Revenue")
+		self.assertEqual(row["segment_label"], "Example")
+		self.assertEqual(row["periods"][PERIODS[0]], 110.0)
+		self.assertEqual(row["year_over_year"][0]["difference"], 10.0)
+		self.assertEqual(row["source_identity"][PERIODS[0]]["accession"], "A1")
+
+	def test_mixed_refs_resolve_all_or_fail_closed(self) -> None:
+		segments = make_investigable_segments()
+		mixed = finding().model_copy(update={"affected_line_refs": ["L01", "S01"]})
+		resolved = resolve_segment_references(
+			make_pnl(), mixed, segments, expected_filing_accession="A1"
+		)
+		self.assertEqual(resolved["L01"]["scope"], "consolidated")
+		self.assertEqual(resolved["S01"]["scope"], "segment")
+		invalid = mixed.model_copy(update={"affected_line_refs": ["L01", "S99"]})
+		with self.assertRaisesRegex(FilingInvestigationError, "stale persisted segment ref"):
+			resolve_segment_references(
+				make_pnl(), invalid, segments, expected_filing_accession="A1"
+			)
+
+	def test_segment_initial_queries_are_closed_world_and_metric_qualified(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		context = build_finding_plan_context(
+			make_pnl(), FakeFiling(), segment_finding, make_investigable_segments()
+		)
+		plan, derivations = build_initial_search_plan(segment_finding, context)
+		self.assertEqual(plan.queries[0], "Example revenue increased")
+		self.assertTrue(all("demand" not in item["query"].casefold() for item in derivations))
+		self.assertEqual(derivations[0]["line_refs"], ["S01"])
+
+	def test_mixed_initial_query_attribution_uses_saved_direction(self) -> None:
+		mixed = finding().model_copy(update={"affected_line_refs": ["L01", "S01"]})
+		context = {
+			"lines": [
+				{
+					"line_ref": "L01",
+					"source_label": "Revenue",
+					"year_over_year": [{"difference": 10.0}],
+				},
+				{
+					"line_ref": "S01",
+					"source_label": "More Personal Computing",
+					"reference_type": "segment",
+					"metric": "Revenue",
+					"year_over_year": [{"difference": -5.0}],
+				},
+			]
+		}
+		plan, derivations = build_initial_search_plan(mixed, context)
+		decreased = [
+			item for item in derivations if item["query"].casefold() == "revenue decreased"
+		]
+		self.assertEqual(len(decreased), 1)
+		self.assertEqual(decreased[0]["line_refs"], ["S01"])
+		self.assertIn("Revenue decreased", plan.queries)
+
+	def test_segment_ref_drift_fails_before_retrieval(self) -> None:
+		segments = make_investigable_segments()
+		segments.loc[0, "segment_label"] = "Changed"
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		with self.assertRaisesRegex(FilingInvestigationError, "persisted segment refs"):
+			resolve_segment_references(
+				make_pnl(), segment_finding, segments, expected_filing_accession="A1"
+			)
+
+	def test_segment_source_and_derived_context_drift_fails_closed(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		mutations = (
+			(0, "value", 999.0, "source value drift"),
+			(0, "reported_value", 999.0, "source value drift"),
+			(0, "numeric_value", 999.0, "source value drift"),
+			(0, "period_end", "1900-01-01", "period metadata drift"),
+			(0, "period_start", "2025-01-01", "period metadata drift"),
+			(0, "fact_id", "fact-1", "fact/context identity"),
+			(0, "context_ref", "context-1", "fact/context identity"),
+			(0, "unit", "EUR", "inconsistent unit identity"),
+			(0, "currency", "EUR", "inconsistent currency identity"),
+			(0, "accession", "A2", "inconsistent accession identity"),
+			(0, "source_url", "https://example.test/other.htm", "inconsistent source_url identity"),
+			(0, "source_locator", "other-locator", "inconsistent source_locator identity"),
+			(0, "period_type", "instant", "inconsistent period_type identity"),
+			(0, "filing_date", "2025-07-30", "inconsistent filing_date identity"),
+			(0, "form_type", "10-Q", "inconsistent form_type identity"),
+			(0, "statement_role", "other-role", "inconsistent statement_role identity"),
+			(0, "concept", "other-concept", "inconsistent concept identity"),
+			(0, "standard_concept", "Other", "inconsistent standard_concept identity"),
+			(0, "absolute_yoy_change", 999.0, "deterministic context drift"),
+			(0, "yoy_growth", 999.0, "deterministic context drift"),
+			(0, "revenue_share", 999.0, "deterministic context drift"),
+			(0, "revenue_share_change_bps", 999.0, "deterministic context drift"),
+			(0, "revenue_share_bps_change", 999.0, "deterministic context drift"),
+			(0, "revenue_growth_contribution", 999.0, "deterministic context drift"),
+			(3, "operating_margin", 999.0, "deterministic context drift"),
+			(3, "operating_margin_bps_change", 999.0, "deterministic context drift"),
+			(3, "margin_bps_change", 999.0, "deterministic context drift"),
+			(3, "operating_income_growth_contribution", 999.0, "deterministic context drift"),
+			(3, "operating_growth_contribution", 999.0, "deterministic context drift"),
+		)
+		for row_index, field, value, message in mutations:
+			with self.subTest(field=field):
+				segments = make_investigable_segments()
+				segments.loc[row_index, field] = value
+				with self.assertRaisesRegex(FilingInvestigationError, message):
+					resolve_segment_references(
+						make_pnl(),
+						segment_finding,
+						segments,
+						expected_filing_accession="A1",
+					)
+
+	def test_uniform_persisted_source_identity_drift_fails_closed(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		mutations = (
+			("period_type", "instant"),
+			("form_type", "10-Q"),
+			("filing_date", "2025-07-30"),
+			("statement_role", "other-role"),
+			("unit", "U_EUR"),
+			("currency", "EUR"),
+			("source_url", "https://evil.test/source"),
+			("segment_label", "Wrong label"),
+		)
+		with TemporaryDirectory() as directory:
+			root = Path(directory)
+			segments = make_investigable_segments()
+			_, checks = make_segments()
+			save_segment_analytics("MSFT", segments, root)
+			save_segment_reconciliation("MSFT", checks, root)
+			loaded = load_segment_analytics("MSFT", root)
+			for field, value in mutations:
+				with self.subTest(field=field):
+					mutated = loaded.copy(deep=True)
+					mutated[field] = value
+					with self.assertRaisesRegex(
+						FilingInvestigationError, "persisted segment source identity drift"
+					):
+						resolve_segment_references(
+							make_pnl(),
+							segment_finding,
+							mutated,
+							expected_filing_accession="A1",
+						)
+			context = format_analytical_pnl_for_scan(make_pnl(), loaded)
+			path = save_analytical_scan(
+				"MSFT",
+				AnalyticalScanResult(findings=[segment_finding]),
+				{"ticker": "MSFT", "filing_accession": "A1", "run_id": "s1"},
+				context,
+				root,
+			)
+			mutated = loaded.copy(deep=True)
+			mutated["period_type"] = "instant"
+			with self.assertRaisesRegex(
+				FilingInvestigationError, "persisted segment source identity drift"
+			):
+				load_saved_scan(path, "MSFT", make_pnl(), mutated)
+
+	def test_segment_resolution_does_not_rebuild_persisted_context(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		with patch(
+			"smrik_fund.ingestion.segments.build_segment_analytics",
+			side_effect=AssertionError("persisted context must not be rebuilt"),
+		):
+			resolved = resolve_segment_references(
+				make_pnl(),
+				segment_finding,
+				make_investigable_segments(),
+				expected_filing_accession="A1",
+			)
+		self.assertEqual(resolved["S01"]["periods"][PERIODS[0]], 110.0)
+
+	def test_segment_observed_movement_keeps_segment_scope(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		observed = build_observed_movement(
+			make_pnl(), segment_finding, make_investigable_segments()
+		)
+		self.assertEqual(observed[0]["scope"], "segment")
+		self.assertEqual(observed[0]["reported_values"][PERIODS[1]], 100.0)
+
+	def test_mixed_observed_movement_keeps_consolidated_scope(self) -> None:
+		mixed = finding().model_copy(update={"affected_line_refs": ["L01", "S01"]})
+		observed = build_observed_movement(
+			make_pnl(), mixed, make_investigable_segments()
+		)
+		consolidated = observed[0]
+		self.assertEqual(consolidated["reference_type"], "consolidated")
+		self.assertEqual(consolidated["scope"], "consolidated")
+		self.assertEqual(observed[1]["scope"], "segment")
+
+	def test_consolidated_l_neutral_narrative_remains_valid(self) -> None:
+		result = FinancialInvestigationResult(
+			disclosed_drivers=[],
+			interpretation="The packet reports the movement.",
+			interpretation_evidence_refs=["E1"],
+			unresolved_remainder="Other components remain unresolved.",
+			unresolved_remainder_evidence_refs=["E1"],
+			explanation="The packet reports the movement.",
+			explanation_evidence_refs=["E1"],
+		)
+		validated = validate_financial_investigation(
+			result,
+			self.evidence_packet("Revenue increased driven by demand."),
+		)
+		observed = build_observed_movement(make_pnl(), finding())
+		self.assertEqual(observed[0]["reference_type"], "consolidated")
+		self.assertEqual(observed[0]["scope"], "consolidated")
+		self.assertEqual(validated.interpretation, result.interpretation)
+
+	def test_segment_pair_uses_metric_qualified_label_and_keeps_scope(self) -> None:
+		segment_finding = finding().model_copy(update={"affected_line_refs": ["S01"]})
+		packet = self.paired_evidence_packet(
+			[
+				"Example revenue included $6.5 billion of gains and $4.8 billion of gains for fiscal "
+				"years 2026 and 2025, respectively."
+			]
+		)
+		extracted = extract_period_paired_disclosures(
+			make_pnl(),
+			segment_finding,
+			packet,
+			observed_unit="dollars",
+			segments=make_investigable_segments(),
+		)
+		self.assertEqual(extracted["facts"][0]["target_line_ref"], "S01")
+		bridge = reconcile_period_pair_bridge(
+			make_pnl(),
+			segment_finding,
+			packet,
+			observed_unit="dollars",
+			segments=make_investigable_segments(),
+		)
+		self.assertEqual(bridge["target_scope"], "segment")
+		self.assertFalse(bridge["difference_is_reported_plug"])
 
 
 class SavedScanTests(TestCase):
