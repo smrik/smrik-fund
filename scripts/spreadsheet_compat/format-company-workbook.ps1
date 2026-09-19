@@ -128,7 +128,7 @@ try {
         foreach ($driver in $snapshot.presentation.drivers.PSObject.Properties[$name].Value.PSObject.Properties) {
             $r=[int]$driver.Name
             $range=$sheet.Range($sheet.Cells.Item($r,2),$sheet.Cells.Item($r,$sheet.UsedRange.Columns.Count))
-            $range.NumberFormat=if ($name -eq 'Assets' -and $r -in @(16,24)) {'0.0x'} else {'0.0%'}
+            $range.NumberFormat=if ($name -eq 'Assets' -and $r -in @(16,24)) {'0.0'} else {'0.0%'}
             $range.Font.Italic=$true
         }
     }
@@ -139,7 +139,7 @@ try {
     $dcf.Rows.Item(25).RowHeight=42
     $dcf.Rows.Item(25).Font.Bold=$true
     $dcf.Range($dcf.Cells.Item(25,1),$dcf.Cells.Item(25,$dcf.UsedRange.Columns.Count)).Interior.Color=15132390
-    $dcf.Rows.Item(44).NumberFormat='0.00x'
+    $dcf.Rows.Item(44).NumberFormat='0.00'
     $formulaErrors=@()
     foreach ($sheet in $book.Worksheets) {
         try { $errors=$sheet.UsedRange.SpecialCells(-4123,16); foreach ($cell in $errors.Cells) { $formulaErrors += "$($sheet.Name)!$($cell.Address()): $($cell.Text)" } } catch { }

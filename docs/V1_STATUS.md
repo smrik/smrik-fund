@@ -22,6 +22,8 @@ The pre-merge remote status is preserved verbatim in [the August 30 archive](his
   Isolated retry of AMZN, KO, HD and the HTTP contract: all four passed
   (202.71s). Real workbook coverage includes BBWI, AAPL, LULU, HPQ, NVDA,
   COST, GOOGL, AMZN, KO and HD; this is not universal issuer coverage.
+  Final history/export tests: 10 passed (14.96s). Ruff, JavaScript syntax and
+  whitespace checks passed. Statement and DCF previews were inspected.
 - Forecast expense detail remains consolidated. COGS/SG&A are reported as
   historical detail where available, without invented forecasts. The user-supplied
   CFA workbook was reviewed as a reference; remaining financial-method differences

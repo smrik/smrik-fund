@@ -46,7 +46,7 @@ detail is shown where available, but no separate future allocation is invented.
 Other existing development assumptions remain provisional.
 
 The rebuilt workbook is at:
-data/workspace/runs/20260919-bbwi-history-final/reviewed/BBWI.xlsx
+data/workspace/runs/20260919-bbwi-history-r3/reviewed/BBWI.xlsx
 
 Its 572 forecast values match the preceding BBWI model within tolerance, and its
 provisional value remains $41.4706/share. Native Excel checked those values plus
