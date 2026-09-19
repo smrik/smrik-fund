@@ -13,6 +13,7 @@ import pandas as pd
 
 from smrik_fund.analysis_budget import content_hash
 from smrik_fund.company_case import validate_case
+from smrik_fund.company_history import annual_history
 from smrik_fund.company_model import (
 	CONTROL_BOUNDS,
 	DEFAULT_CONTROLS,
@@ -75,7 +76,7 @@ def prepare_model(case_dir, controls=None):
 		json.loads((case_dir / a / "filing.json").read_text())
 		for a in manifest["selected_filings"]
 	]
-	annual = next(m for m in metadata if m["form"] == "10-K")
+	annual = max((m for m in metadata if m["form"] == "10-K"), key=lambda m: m["measurement_date"])
 	latest = max(metadata, key=lambda m: m["measurement_date"])
 	frames = {
 		m["accession"]: {
@@ -128,6 +129,9 @@ def prepare_model(case_dir, controls=None):
 		)
 		return value
 
+	annual_trends = annual_history(metadata, frames, evidence)
+	# Older filings enrich history; they do not change current TTM classifications.
+	metadata = [annual] if latest is annual else [annual, latest]
 	current = latest["measurement_date"]
 	bs = face(latest, "balance_sheet")
 	# This enterprise DCF requires an industrial-company classified balance sheet.
@@ -687,6 +691,8 @@ def prepare_model(case_dir, controls=None):
 		"units": "USD millions, million shares, USD/share",
 		"opening": opening,
 		"history": flow,
+		"annual_history": annual_trends,
+		"history_windows": {"annual": fy, "current_ytd": cp, "prior_ytd": pp},
 		"segments": {
 			"Products": flow["revenue"],
 			"Services": dict.fromkeys(flow["revenue"], 0),

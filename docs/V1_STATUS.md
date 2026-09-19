@@ -2,6 +2,33 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Financial history and statement formulas - verified 2026-09-19
+
+- New captures request five annual filings plus the latest subsequent interim.
+  BBWI shows FY2021-FY2025, TTM and full annual forecasts; balances use exact
+  dates. The initial future remainder stays separate for DCF timing.
+- Removed the generic Schedules sheet. Forecast equations and visible drivers
+  sit on Income, BalanceSheet and CashFlow; supporting Assets and WorkingCapital
+  retain their roll-forwards. Source editions, signs, gaps, tax bridges and
+  discontinued operations remain auditable. [Reading guide](FINANCIAL_HISTORY.md).
+- BBWI: all 572 forecast values unchanged within tolerance; provisional DCF
+  $41.4706/share. Native Excel checked 161 historical values, found no formula
+  errors and passed beta edit/restoration. Eight source/workbook audit checks
+  passed. The assumptions remain provisional; no paid calls were made.
+- Regression command: `pytest -q tests/test_company_case.py
+  tests/test_company_history.py tests/test_company_model.py
+  tests/test_portable_model.py tests/test_daily_research.py
+  tests/test_research_workspace.py`: 102 passed, four execution timeouts.
+  Isolated retry of AMZN, KO, HD and the HTTP contract: all four passed
+  (202.71s). Real workbook coverage includes BBWI, AAPL, LULU, HPQ, NVDA,
+  COST, GOOGL, AMZN, KO and HD; this is not universal issuer coverage.
+  Final history/export tests: 10 passed (14.96s). Ruff, JavaScript syntax and
+  whitespace checks passed. Statement and DCF previews were inspected.
+- Forecast expense detail remains consolidated. COGS/SG&A are reported as
+  historical detail where available, without invented forecasts. The user-supplied
+  CFA workbook was reviewed as a reference; remaining financial-method differences
+  are recorded in the reading guide.
+
 ## Screener and optional watchlist — verified 2026-09-19
 
 - [x] Added `/screener` and `/watchlist` to the local website. Screener opens the

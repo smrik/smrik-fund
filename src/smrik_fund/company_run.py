@@ -261,11 +261,13 @@ def run_case(
 		str(path.relative_to(ROOT)): fingerprint(path)
 		for path in (
 			ENGINE,
+			ROOT / "scripts/spreadsheet_compat/company-statements.mjs",
 			FORMATTER,
 			Path(__file__),
 			ROOT / "src/smrik_fund/company_model.py",
 			ROOT / "src/smrik_fund/company_case.py",
 			ROOT / "src/smrik_fund/portable_model.py",
+			ROOT / "src/smrik_fund/company_history.py",
 			ROOT / "src/smrik_fund/company_notes.py",
 		)
 	}

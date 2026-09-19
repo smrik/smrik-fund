@@ -124,15 +124,18 @@ def freeze_filings(ticker: str, cutoff: str, filings: list, output_dir: Path, *,
 	return manifest
 
 
-def freeze_company(ticker: str, cutoff: str, output_dir: Path) -> dict:
+def freeze_company(ticker: str, cutoff: str, output_dir: Path, *, history_years: int = 5) -> dict:
 	ticker, cutoff_date = _identity(ticker, cutoff)
+	if type(history_years) is not int or not 1 <= history_years <= 10:
+		raise ValueError("Historical annual years must be between 1 and 10")
 	configure_edgar()
 	company = Company(ticker)
-	annual = company.get_filings(form="10-K", filing_date=f":{cutoff_date}", amendments=False).latest()
-	if annual is None:
+	annuals = company.get_filings(form="10-K", filing_date=f":{cutoff_date}", amendments=False).head(history_years)
+	if not len(annuals):
 		raise ValueError("No annual filing available at the information cutoff")
 	quarter = company.get_filings(form="10-Q", filing_date=f":{cutoff_date}", amendments=False).latest()
-	filings = [annual]
+	filings = list(annuals)
+	annual = max(filings, key=lambda filing: str(filing.period_of_report))
 	if quarter is not None and str(quarter.period_of_report) > str(annual.period_of_report):
 		filings.append(quarter)
 	return freeze_filings(ticker, cutoff, filings, output_dir, expected_cik=str(company.cik), include_notes=True)
