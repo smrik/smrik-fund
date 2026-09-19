@@ -2,6 +2,34 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Screener and optional watchlist — verified 2026-09-19
+
+- [x] Added `/screener` and `/watchlist` to the local website. Screener opens the
+  latest saved broad universe: 2,765 companies, 2,486 passing initial filters,
+  72 candidates and a 30-stock shortlist in the September 16 capture. Includes
+  company/sector/valuation filters, sortable columns, pagination and CSV export.
+  This provider-filtered universe is not every US listing or universal model coverage.
+- [x] Company detail links to the selected screen/ticker in Research and the
+  latest saved attempt. Dates, missing inputs, source issues and original screen
+  decisions remain visible; financial evidence is verified before use.
+- [x] Optional watchlist starts empty. Up to 30 active companies, persistent notes,
+  research stages, archive/restore and manual USD review prices. Freshness/currency
+  guards suppress invalid price flags; revision checks prevent lost edits. Notes
+  remain separate from reported data and model assumptions.
+- [x] **74 tests PASS (14.33s)** across `test_research_watchlist.py`,
+  `test_research_workspace.py` and `test_daily_research.py`. Changed-code Ruff,
+  both pages' JavaScript syntax and Git whitespace checks passed. New watchlist
+  contracts are included in portable GitHub CI.
+- [x] Browser: universe/subset counts, numeric filters, sorting, pagination,
+  LULU analysis handoff, persistence, archive/restore and a free META watchlist
+  screen passed. Persistence tests used an isolated local workspace; the user's
+  watchlist remains empty. Verified actual viewport widths 320/375/414/768/1280,
+  contained table scrolling, phone editor fit and Escape returning focus.
+  No browser console errors. [Preview](images/screener.png),
+  [usage and code guide](WORKBENCH.md#screener-and-watchlist).
+- [x] No paid calls. Financial calculations and native Excel were unchanged;
+  prior real-model/Excel evidence remains below.
+
 ## Workbench editorial redesign — verified 2026-09-19
 
 - [x] Installed project-local `no-ai-slop` from petergyang/no-ai-slop and the

@@ -26,8 +26,10 @@ Start the local website:
 uv run smrik-fund daily serve --port 8787
 ```
 
-Open [the research workbench](http://127.0.0.1:8787). Launch a free screen,
-select a company, then inspect the run's evidence, assumptions, checks and Excel.
+Open [Screener](http://127.0.0.1:8787/screener) to browse the saved US universe,
+filter valuation signals and build a watchlist with notes and review prices.
+Select a company to prepare its analysis in [Research](http://127.0.0.1:8787),
+then inspect the run's evidence, assumptions, checks and Excel.
 Each attempt gets a new folder; failures retain their stage and reason.
 The website cannot make paid LLM calls.
 
@@ -63,7 +65,7 @@ Generated filings, workbooks and model responses remain local under `data/`.
 Reproducible tests requiring no downloaded financial data or paid calls:
 
 ```powershell
-uv run pytest -q tests/test_analysis_budget.py tests/test_company_case.py tests/test_daily_research.py tests/test_research_workspace.py
+uv run pytest -q tests/test_analysis_budget.py tests/test_company_case.py tests/test_daily_research.py tests/test_research_workspace.py tests/test_research_watchlist.py
 ```
 
 Other integration tests use frozen local cases under `data/`, Node and sometimes
