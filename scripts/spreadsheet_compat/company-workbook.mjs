@@ -198,9 +198,11 @@ const minority =
     : I("minority_interest_proxy");
 const securities = `(${I("short_investments")}+${I("long_investments")})`;
 const taxRate =
-  model.normalized_tax_rate !== undefined
-    ? I("normalized_tax_rate")
-    : `(${I("ttm_tax")}/${I("ttm_pretax")})`;
+  model.controls.forecast_tax_rate !== undefined
+    ? I("forecast_tax_rate")
+    : model.normalized_tax_rate !== undefined
+      ? I("normalized_tax_rate")
+      : `(${I("ttm_tax")}/${I("ttm_pretax")})`;
 const openingNwc = `(${I("receivables")}+${I("vendor_receivables")}+${I("inventory")}+${I("other_current_assets")}-${I("intangibles_current")}-${I("payables")}-${I("deferred_revenue")})`;
 const rows = [
   [`${model.case} — linked provisional schedules`],

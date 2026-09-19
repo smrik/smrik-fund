@@ -397,6 +397,42 @@ def audit_run(run_dir: Path, data_root: Path = DATA_ROOT) -> dict:
 							source / accession / name, f"{filing['form']} · {name}"
 						)
 				artifact(source / "case.json", "SEC source manifest")
+			if model.get("research_packet_hash"):
+				packet_path = run_dir / "research-packet.json"
+				check(
+					"Research packet bound to reviewed model",
+					lambda: require(
+						content_hash(read(packet_path))
+						== model["research_packet_hash"],
+						"Research packet differs from reviewed evidence",
+					),
+				)
+				assessment_path = run_dir / "assessment-audit.json"
+				if assessment_path.exists():
+					assessment = read(assessment_path)
+					for name, expected in assessment["artifacts"].items():
+						path = within_data(run_dir / name, data_root)
+						check(
+							f"Assessment artifact {name}",
+							lambda p=path, h=expected: require(
+								file_hash(p) == h, "Assessment artifact changed"
+							),
+						)
+				else:
+					result["warnings"].append(
+						"Model published, but IC synthesis/assessment audit did not complete."
+					)
+				ic_review_path = run_dir / "ic-review-audit.json"
+				if ic_review_path.exists():
+					for name, expected in read(ic_review_path)["artifacts"].items():
+						path = within_data(run_dir / name, data_root)
+						check(
+							f"Independent IC artifact {name}",
+							lambda p=path, h=expected: require(
+								file_hash(p) == h,
+								"Independently reviewed IC artifact changed",
+							),
+						)
 			for name in (
 				"version.json",
 				"run.json",
@@ -406,6 +442,12 @@ def audit_run(run_dir: Path, data_root: Path = DATA_ROOT) -> dict:
 				"blocked.json",
 				"deep-result.json",
 				"events.jsonl",
+				"ASSESSMENT.md",
+				"IC.md",
+				"IC-reviewed.md",
+				"ic-review-audit.json",
+				"research-packet.json",
+				"assessment-audit.json",
 			):
 				artifact(run_dir / name, name)
 		if (run_dir / "events.jsonl").exists():

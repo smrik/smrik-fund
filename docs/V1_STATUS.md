@@ -2,6 +2,34 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Automatic BBWI assessment — verified 2026-09-20
+
+- Added explicit `company_run --live --assess`: bounded filing research, dated
+  market quote, source-cited analyst controls, independent model review/revision,
+  native Excel, IC synthesis and independent IC correction. [Run guide](AUTOMATIC_ASSESSMENT.md).
+  Free screening/default runs remain free. No company-specific financial override.
+- Agents identified tariff refunds, settlement gains and discrete tax benefits.
+  They selected forecast COGS 57.5%, SG&A 28.5% and tax 25%. The model reviewer
+  changed depreciation from eight to five years and payout from zero to 25%; the
+  application recalculated and obtained acceptance. Reported history is unchanged.
+- Live output: `data/workspace/runs/20260920-bbwi-automatic-assessment-r2/`.
+  Read `IC-reviewed.md`, `ASSESSMENT.md` and `reviewed/BBWI.xlsx`.
+  IC priority: investigate. $58.1567/share is a conditional development scenario,
+  versus the September 18 $17.40 quote; it is not a verified investment price target.
+  Valuation-date alignment, detailed earnings normalization, downside scenarios,
+  capital-market evidence and debt/lease detail remain material limitations.
+- Native Excel: 572 forecast, 90 operating and 176 historical values checked;
+  zero formula errors; beta/cost edit-restoration passed. All 43 source/artifact
+  checks passed after the independent IC addendum. Model and IC revisions are
+  recorded separately; the original draft remains available.
+- Earlier baseline stopped on an ambiguous original-versus-revised control
+  presentation; the first researched attempt stopped on invalid citation IDs.
+  Both are preserved. Current prompts identify active controls, and output
+  schemas constrain citations to actual supplied IDs.
+- Cumulative budget: EUR 5.0966 of the authorized EUR 10, conservatively including
+  earlier unknown-call reservations. This session added 11 calls; spending remains
+  recorded in the existing ledger rather than reset for each attempt.
+
 ## Editable Excel template - verified 2026-09-19
 
 - `templates/company-model.xlsx` supports inserted forecast rows and formula edits

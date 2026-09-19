@@ -261,6 +261,11 @@ def test_analyst_and_reviewer_changes_recalculate_before_acceptance_without_api(
 	assert revised["schedules"]["Revenue"] == first["schedules"]["Revenue"]
 	assert result["per_share_value"] == revised["per_share_value"]
 	assert calls[1][1]["model"]["controls"]["products_growth"] == -0.02
+	assert "controls" not in calls[2][1]["model"]["analyst"]
+	assert (
+		calls[2][1]["model"]["controls"]
+		== calls[2][1]["model"]["revision_history"][0]["after"]
+	)
 	assert (out / "template.xlsx").is_file()
 	assert result["template_sha256"] == compile_template()["sha256"]
 	assert not (out / "analyst.receipt.json").exists()  # No paid transport invoked.

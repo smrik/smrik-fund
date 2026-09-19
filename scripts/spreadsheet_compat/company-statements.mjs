@@ -339,9 +339,11 @@ export async function buildStatements({ wb, table, model, rows, I }) {
       45: ["Investment yield", I("risk_free")],
       49: [
         "Tax rate",
-        model.normalized_tax_rate !== undefined
-          ? I("normalized_tax_rate")
-          : `${I("ttm_tax")}/${I("ttm_pretax")}`,
+        model.controls.forecast_tax_rate !== undefined
+          ? I("forecast_tax_rate")
+          : model.normalized_tax_rate !== undefined
+            ? I("normalized_tax_rate")
+            : `${I("ttm_tax")}/${I("ttm_pretax")}`,
       ],
     },
     Assets: {
@@ -385,9 +387,11 @@ export async function buildStatements({ wb, table, model, rows, I }) {
     36: [[I("risk_free"), "Income", 45]],
     38: [
       [
-        model.normalized_tax_rate !== undefined
-          ? I("normalized_tax_rate")
-          : `(${I("ttm_tax")}/${I("ttm_pretax")})`,
+        model.controls.forecast_tax_rate !== undefined
+          ? I("forecast_tax_rate")
+          : model.normalized_tax_rate !== undefined
+            ? I("normalized_tax_rate")
+            : `(${I("ttm_tax")}/${I("ttm_pretax")})`,
         "Income",
         49,
       ],
