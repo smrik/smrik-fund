@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Smrik Fund · Research</title>
+    <link rel="stylesheet" href="/tokens.css" />
+    <style>
+      /* Hallmark · genre: editorial · macrostructure: Index-First · theme: Newsprint
+ * nav: N9 Edge-aligned minimal · footer: Ft2 Inline rule · enrichment: none
+ * audience: independent investor · use: screen and inspect company research
+ * tone: editorial · anchor: warm paper/rust · motion: none
+ * pre-emit critique: P4 H4 E4 S5 R5 V4
+ * contrast: WCAG AA text; focus >= 3:1 · mobile: checked 320/375/414/768
+ */
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        overflow-x: clip;
+      }
+      html {
+        scroll-padding-top: var(--space-lg);
+      }
+      body {
+        margin: 0;
+        background: var(--color-paper);
+        color: var(--color-ink);
+        font: var(--text-base) / 1.5 var(--font-body);
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      h1,
+      h2,
+      h3 {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-style: normal;
+        line-height: 1.2;
+        margin: 0;
+      }
+      h1,
+      h2 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        letter-spacing: -0.025em;
+      }
+      h1 {
+        font-size: var(--text-heading);
+      }
+      h2 {
+        font-size: var(--text-lg);
+      }
+      h3 {
+        font-size: var(--text-base);
+        font-weight: 600;
+        margin-block: var(--space-2xl) var(--space-md);
+      }
+      p {
+        margin: var(--space-sm) 0 var(--space-lg);
+        max-width: 70ch;
+      }
+      a {
+        color: var(--color-accent);
+        text-underline-offset: 0.2em;
+      }
+      a,
+      button,
+      summary {
+        -webkit-tap-highlight-color: var(--color-clear);
+      }
+      button,
+      .links a,
+      .masthead a,
+      .foot a {
+        white-space: nowrap;
+      }
+      button {
+        min-height: var(--control-height);
+        border: var(--rule-width) solid var(--color-control);
+        border-radius: var(--radius-control);
+        padding: var(--space-sm) var(--space-lg);
+        background: var(--color-paper);
+        color: var(--color-ink);
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button.primary {
+        background: var(--color-ink);
+        color: var(--color-paper);
+        border-color: var(--color-ink);
+        width: 100%;
+        margin-top: var(--space-lg);
+      }
+      button.quiet {
+        border-color: var(--color-clear);
+        padding-inline: var(--space-sm);
+        font-size: var(--text-sm);
+        text-decoration: underline;
+        text-underline-offset: 0.2em;
+      }
+      button:active:not(:disabled),
+      a:active,
+      summary:active {
+        color: var(--color-accent);
+      }
+      button.primary:active:not(:disabled) {
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+      }
+      button:disabled {
+        color: var(--color-muted);
+        background: var(--color-paper-2);
+        border-color: var(--color-rule);
+        cursor: not-allowed;
+      }
+      :focus-visible {
+        outline: 2px solid var(--color-focus);
+        outline-offset: 1px;
+      }
+      label {
+        display: block;
+        font-size: var(--text-sm);
+        margin-block: var(--space-lg) var(--space-sm);
+      }
+      input,
+      select,
+      textarea {
+        color: var(--color-ink);
+        background: var(--color-paper);
+        border: var(--rule-width) solid var(--color-control);
+        border-radius: var(--radius-control);
+        width: 100%;
+        min-width: 0;
+        min-height: var(--control-height);
+        padding: var(--space-sm) var(--space-md);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--color-muted);
+        opacity: 1;
+      }
+      input[aria-invalid="true"],
+      textarea[aria-invalid="true"] {
+        border-color: var(--color-error);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 10rem;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+      }
+      small,
+      .muted,
+      .foot {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .masthead,
+      main,
+      .foot {
+        max-width: 1440px;
+        margin-inline: auto;
+        padding-inline: var(--space-lg);
+      }
+      .masthead {
+        padding-block: var(--space-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--space-lg);
+        border-bottom: var(--rule-width) solid var(--color-ink);
+      }
+      .masthead a {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--control-height);
+        font-size: var(--text-sm);
+      }
+      .masthead .brand {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-lg);
+      }
+      main {
+        padding-block: var(--space-xl) var(--space-3xl);
+      }
+      .layout {
+        display: grid;
+        grid-template-areas: "report" "tools";
+        gap: var(--space-2xl);
+        align-items: start;
+      }
+      .tools {
+        grid-area: tools;
+        min-width: 0;
+      }
+      .report {
+        grid-area: report;
+        min-width: 0;
+      }
+      .panel {
+        min-width: 0;
+      }
+      .tools .panel + .panel {
+        border-top: var(--rule-width) solid var(--color-rule);
+        padding-top: var(--space-xl);
+        margin-top: var(--space-xl);
+      }
+      .form-note {
+        margin-top: var(--space-sm);
+        margin-bottom: 0;
+        min-height: 1lh;
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      #company-note {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+        margin-top: var(--space-md);
+      }
+      .section-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-sm);
+        margin-bottom: var(--space-md);
+      }
+      .audit-head {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+      }
+      .audit-head h2 {
+        font-size: var(--text-display);
+      }
+      .audit-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-sm) var(--space-xl);
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .run-path {
+        overflow-wrap: anywhere;
+        color: var(--color-muted);
+        font-size: var(--text-sm);
+      }
+      .pill {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+        white-space: nowrap;
+      }
+      .pass {
+        color: var(--color-success);
+      }
+      .fail {
+        color: var(--color-error);
+      }
+      .warn {
+        color: var(--color-accent);
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--space-lg);
+        padding-block: var(--space-xl);
+        border-bottom: var(--rule-width) solid var(--color-rule);
+        margin-bottom: var(--space-lg);
+      }
+      .facts > div {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: var(--space-xs);
+      }
+      .facts strong {
+        display: block;
+        font-size: var(--text-heading);
+        line-height: 1.3;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .facts .date strong {
+        font-size: var(--text-lg);
+      }
+      .notice {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+        margin: var(--space-md) 0 var(--space-xl);
+      }
+      .checks {
+        display: grid;
+        gap: var(--space-sm);
+        padding-block: var(--space-md);
+      }
+      .check {
+        display: grid;
+        grid-template-columns: 3.25rem minmax(0, 1fr);
+        gap: var(--space-sm);
+        font-size: var(--text-sm);
+      }
+      .check p {
+        grid-column: 2;
+        color: var(--color-error);
+      }
+      details {
+        border-top: var(--rule-width) solid var(--color-rule);
+        margin-top: var(--space-lg);
+        padding-top: var(--space-sm);
+      }
+      summary {
+        cursor: pointer;
+        min-height: var(--control-height);
+        padding-block: var(--space-sm);
+        font-size: var(--text-sm);
+        font-weight: 600;
+      }
+      summary::marker {
+        color: var(--color-muted);
+      }
+      .scroll {
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--text-sm);
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--color-muted);
+        padding: var(--space-sm) var(--space-md);
+        border-bottom: var(--rule-width) solid var(--color-ink);
+      }
+      td {
+        padding: var(--space-md);
+        border-bottom: var(--rule-width) solid var(--color-rule);
+        vertical-align: top;
+      }
+      time {
+        white-space: nowrap;
+      }
+      table a {
+        white-space: nowrap;
+      }
+      th:first-child,
+      td:first-child {
+        padding-left: 0;
+      }
+      th:last-child,
+      td:last-child {
+        padding-right: 0;
+      }
+      .run-list {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .run-entry {
+        border: 0;
+        border-radius: 0;
+        border-bottom: var(--rule-width) solid var(--color-rule);
+        text-align: left;
+        background: var(--color-clear);
+        padding: var(--space-md) var(--space-sm);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-xs) var(--space-sm);
+        white-space: normal;
+        font-size: var(--text-sm);
+        font-weight: 400;
+      }
+      .run-entry strong {
+        font-weight: 600;
+      }
+      .run-entry .run-label,
+      .run-entry time {
+        white-space: nowrap;
+      }
+      .run-entry .run-status {
+        grid-column: 1 / -1;
+      }
+      .run-entry[aria-current="true"] {
+        background: var(--color-paper-2);
+        color: var(--color-ink);
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-sm) var(--space-xl);
+      }
+      .links a {
+        min-height: var(--control-height);
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: var(--text-sm);
+      }
+      .primary-link {
+        font-weight: 600;
+      }
+      .file-list {
+        display: grid;
+        gap: var(--space-sm);
+        margin-block: var(--space-md);
+      }
+      .file-list a {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-height: var(--control-height);
+        padding-block: var(--space-sm);
+        font-size: var(--text-sm);
+      }
+      li {
+        margin-bottom: var(--space-sm);
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: var(--color-paper-2);
+        color: var(--color-ink);
+        padding: var(--space-lg);
+        font: var(--text-sm) / 1.5 var(--font-mono);
+        max-height: 20rem;
+        overflow: auto;
+      }
+      .error {
+        display: none;
+        color: var(--color-error);
+        border-block: var(--rule-width) solid var(--color-error);
+        padding: var(--space-md) 0;
+        margin-bottom: var(--space-xl);
+      }
+      .job {
+        border-bottom: var(--rule-width) solid var(--color-rule);
+        padding-bottom: var(--space-lg);
+        margin-bottom: var(--space-xl);
+        font-size: var(--text-sm);
+      }
+      .job-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: var(--space-sm) var(--space-lg);
+      }
+      .job details {
+        border: 0;
+        padding: 0;
+        margin-top: var(--space-xs);
+      }
+      .empty {
+        color: var(--color-muted);
+        padding-block: var(--space-xl);
+      }
+      .foot {
+        border-top: var(--rule-width) solid var(--color-rule);
+        padding-block: var(--space-lg);
+      }
+      .skip {
+        position: fixed;
+        top: var(--space-sm);
+        left: var(--space-lg);
+        transform: translateY(-200%);
+        background: var(--color-paper);
+        color: var(--color-accent);
+        padding: var(--space-sm);
+      }
+      .skip:focus {
+        transform: none;
+      }
+      @media (hover: hover) {
+        button:not(:disabled):hover,
+        input:hover,
+        select:hover,
+        textarea:hover {
+          background: var(--color-paper-2);
+          color: var(--color-ink);
+        }
+        button.primary:not(:disabled):hover:not(:focus-visible) {
+          background: var(--color-accent);
+          color: var(--color-accent-ink);
+        }
+        a:hover {
+          text-decoration-thickness: 2px;
+        }
+      }
+      @media (min-width: 40rem) {
+        .masthead,
+        main,
+        .foot {
+          padding-inline: var(--space-2xl);
+        }
+        .facts {
+          grid-template-columns: 1.3fr 1fr 1fr;
+        }
+        .audit-head {
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: baseline;
+        }
+      }
+      @media (min-width: 64rem) {
+        .layout {
+          grid-template-columns: 280px minmax(0, 1fr);
+          grid-template-areas: "tools report";
+          gap: var(--space-3xl);
+        }
+        .tools {
+          border-right: var(--rule-width) solid var(--color-rule);
+          padding-right: var(--space-xl);
+        }
+      }
+      @media (max-width: 25rem) {
+        .section-top {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#audit">Skip to result</a>
+    <header class="masthead">
+      <div class="brand">
+        <h1>Smrik Fund</h1>
+      </div>
+      <a href="#screen-form">New run</a>
+    </header>
+    <main>
+      <div id="error" class="error" role="alert"></div>
+      <div class="layout">
+        <div class="report">
+          <div id="jobs" aria-live="polite"></div>
+          <section id="audit" class="panel" aria-live="polite">
+            <h2>Research</h2>
+            <p class="empty">Loading saved runs…</p>
+          </section>
+        </div>
+        <aside class="tools">
+          <form id="screen-form" class="panel">
+            <h2>Screen</h2>
+            <label for="tickers">US tickers</label
+            ><input
+              id="tickers"
+              value="MSFT,META,HD,KO,LULU,HPQ,BBWI"
+              placeholder="MSFT, META, HD"
+            />
+            <p class="form-note">Up to 30. Blank searches all US listings.</p>
+            <button class="primary" type="submit">Run screen</button>
+          </form>
+          <form id="deep-form" class="panel">
+            <h2>Analyze</h2>
+            <label for="screen-choice">Screen</label
+            ><select id="screen-choice"></select
+            ><label for="ticker-choice">Company</label
+            ><select id="ticker-choice"></select>
+            <details>
+              <summary>Method &amp; assumptions</summary>
+              <p id="company-note"></p>
+              <label for="assumptions">Scenario JSON (optional)</label
+              ><textarea
+                id="assumptions"
+                aria-label="Optional scenario assumptions JSON"
+                placeholder='{"controls": {}, "rationale": "", "limitations": []}'
+              ></textarea>
+              <p class="form-note">
+                Blank uses recorded defaults. Custom scenarios require all
+                controls.
+              </p>
+            </details>
+            <button class="primary" type="submit" disabled>Run analysis</button>
+            <p class="form-note">Free. Desktop Excel required.</p>
+          </form>
+          <section class="panel" aria-label="Run history">
+            <div class="section-top">
+              <h2>Runs</h2>
+              <button id="refresh" class="quiet" type="button">Refresh</button>
+            </div>
+            <label for="filter">Find a run</label
+            ><input
+              id="filter"
+              aria-label="Filter research runs"
+              placeholder="Ticker or status"
+            />
+            <div id="runs" class="run-list"></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+    <footer class="foot">Local research · No paid calls from this page</footer>
+    <script>
+      const token = "__SESSION_TOKEN__";
+      const $ = (selector) => document.querySelector(selector);
+      const escapeText = (value) =>
+        String(value ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const pathUrl = (path) =>
+        path.split("/").map(encodeURIComponent).join("/");
+      const money = (value) =>
+        Number.isFinite(value)
+          ? "$" +
+            value.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : "—";
+      const date = (seconds) =>
+        seconds
+          ? new Date(seconds * 1000).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "—";
+      const pretty = (status) =>
+        ({
+          PROVISIONAL_UNREVIEWED: "Provisional",
+          SYSTEM_REVIEWED_DEVELOPMENT: "Development reviewed",
+          FREE_RESEARCH_COMPLETE: "Screen complete",
+          PARTIAL_SOURCE_COVERAGE: "Partial coverage",
+          SOURCE_ONLY_SPECIALIST_METHOD_REQUIRED: "Specialist method",
+          BLOCKED: "Stopped",
+          INCOMPLETE: "Incomplete",
+          INVALID_ARTIFACT: "Invalid artifact",
+          RUNNING: "Running",
+          QUEUED: "Queued",
+          FAILED: "Failed",
+          COMPLETED: "Complete",
+        })[status] ?? status;
+      const pill = (status) =>
+        `<span class="pill ${status === "PASS" ? "pass" : ["FAIL", "FAILED", "BLOCKED", "INVALID_ARTIFACT"].includes(status) ? "fail" : "warn"}">${escapeText(pretty(status))}</span>`;
+      let runs = [],
+        jobs = [],
+        companies = [],
+        selectedRun = null,
+        active = false,
+        loading = false,
+        submitting = false,
+        screenVerified = false;
+      async function api(url, options) {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || response.statusText);
+        return data;
+      }
+      function error(e) {
+        $("#error").textContent = e.message;
+        $("#error").style.display = "block";
+      }
+      function rowsTable(headers, rows) {
+        return `<div class="scroll" tabindex="0" role="region" aria-label="${escapeText(headers.join(", "))}"><table><thead><tr>${headers.map((h) => `<th scope="col">${escapeText(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${value}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+      }
+      function fileLink(file, label = file.label) {
+        return `<a target="_blank" rel="noopener" href="/files/${pathUrl(file.path)}" title="${escapeText(file.path)}">${escapeText(label)}</a>`;
+      }
+      function updateButtons() {
+        $("#screen-form button[type=submit]").disabled = active || submitting;
+        $("#deep-form button[type=submit]").disabled =
+          active || submitting || !screenVerified || !companies.length;
+      }
+      function renderRuns() {
+        const filter = $("#filter").value.toLowerCase();
+        const matching = runs.filter((run) =>
+          (run.ticker + " " + run.id + " " + pretty(run.status))
+            .toLowerCase()
+            .includes(filter),
+        );
+        $("#runs").innerHTML =
+          matching
+            .slice(0, 12)
+            .map(
+              (run) =>
+                `<button type="button" class="run-entry inspect" data-id="${escapeText(run.id)}" aria-current="${run.id === selectedRun}" title="${escapeText(run.id)}"><strong class="run-label">${escapeText(run.kind === "screen" ? "Screen" : run.ticker)}</strong><time>${date(run.updated)}</time><span class="run-status">${run.kind === "screen" ? `${run.counts.universe ?? 0} companies · ${run.counts.shortlist ?? 0} shortlisted` : pill(run.status)}</span></button>`,
+            )
+            .join("") || '<p class="empty">No matching runs.</p>';
+        document
+          .querySelectorAll(".inspect")
+          .forEach(
+            (button) =>
+              (button.onclick = () => inspect(button.dataset.id).catch(error)),
+          );
+      }
+      async function loadCompanies() {
+        const id = $("#screen-choice").value;
+        companies = [];
+        screenVerified = false;
+        $("#ticker-choice").innerHTML = "";
+        companyNote();
+        updateButtons();
+        if (!id) return;
+        const audit = await api("/api/audit/" + pathUrl(id));
+        if (id !== $("#screen-choice").value) return;
+        companies = audit.companies || [];
+        screenVerified = audit.integrity === "PASS";
+        $("#ticker-choice").innerHTML = companies
+          .map(
+            (company) =>
+              `<option value="${escapeText(company.ticker)}">${escapeText(company.ticker + " · " + company.name)}</option>`,
+          )
+          .join("");
+        companyNote();
+        updateButtons();
+      }
+      function companyNote() {
+        const company = companies.find(
+          (company) => company.ticker === $("#ticker-choice").value,
+        );
+        $("#company-note").textContent = company
+          ? `${company.method}. ${company.flags.join("; ")}`
+          : "Choose a completed screen first.";
+      }
+      async function refresh() {
+        if (loading) return;
+        loading = true;
+        try {
+          const data = await api("/api/runs");
+          runs = data.runs;
+          jobs = data.jobs;
+          active = data.jobs.some((job) =>
+            ["RUNNING", "QUEUED"].includes(job.status),
+          );
+          renderRuns();
+          const oldScreen = $("#screen-choice").value;
+          const screens = runs.filter((run) => run.kind === "screen");
+          $("#screen-choice").innerHTML = screens
+            .map(
+              (run) =>
+                `<option value="${escapeText(run.id)}" title="${escapeText(run.id)}">${date(run.updated)} · ${run.counts.universe ?? 0} companies</option>`,
+            )
+            .join("");
+          if (screens.some((run) => run.id === oldScreen))
+            $("#screen-choice").value = oldScreen;
+          if (!companies.length || oldScreen !== $("#screen-choice").value)
+            await loadCompanies();
+          // Completed runs are already in history; keep this space for active or failed jobs.
+          $("#jobs").innerHTML = data.jobs
+            .slice(0, 1)
+            .filter((job) =>
+              ["RUNNING", "QUEUED", "FAILED"].includes(job.status),
+            )
+            .map(
+              (job) =>
+                `<div class="job"><div class="job-head"><strong>${escapeText(job.action === "screen" ? "Screen" : job.ticker + " analysis")}</strong>${pill(job.status)}<button type="button" class="quiet inspect-job" data-id="${escapeText(job.output)}">Open run</button></div>${job.reason ? "<p>" + escapeText(job.reason) + "</p>" : ""}<details><summary>Run log</summary><p class="muted">Started ${escapeText(new Date(job.started_at || job.created_at).toLocaleString())}${job.finished_at ? " · finished " + escapeText(new Date(job.finished_at).toLocaleTimeString()) : ""}</p><pre>${escapeText(job.log || "Waiting for the worker…")}</pre></details></div>`,
+            )
+            .join("");
+          document
+            .querySelectorAll(".inspect-job")
+            .forEach(
+              (button) =>
+                (button.onclick = () =>
+                  inspect(button.dataset.id).catch(error)),
+            );
+          updateButtons();
+          if (!selectedRun) {
+            const initial =
+              new URLSearchParams(location.hash.slice(1)).get("run") ||
+              runs.find((run) =>
+                [
+                  "PROVISIONAL_UNREVIEWED",
+                  "SYSTEM_REVIEWED_DEVELOPMENT",
+                ].includes(run.status),
+              )?.id ||
+              runs[0]?.id;
+            if (initial) await inspect(initial, false);
+            else
+              $("#audit").innerHTML =
+                '<h2>Research</h2><p class="empty">No saved runs. Start a screen to begin.</p>';
+          } else await inspect(selectedRun, false);
+        } finally {
+          loading = false;
+        }
+      }
+      async function inspect(id, scroll = true) {
+        selectedRun = id;
+        const audit = await api("/api/audit/" + pathUrl(id));
+        if (id !== selectedRun) return;
+        history.replaceState(null, "", "#run=" + encodeURIComponent(id));
+        renderRuns();
+        const value = audit.valuation;
+        const job = jobs.find((job) => job.output === audit.id);
+        const checks = audit.checks
+          .map(
+            (check) =>
+              `<div class="check">${pill(check.status)}<span>${escapeText(check.label)}</span>${check.reason ? "<p>" + escapeText(check.reason) + "</p>" : ""}</div>`,
+          )
+          .join("");
+        const passed = audit.checks.filter(
+          (check) => check.status === "PASS",
+        ).length;
+        const events = audit.events.length
+          ? rowsTable(
+              ["Time", "Stage", "Outcome", "Detail"],
+              audit.events.map((event) => [
+                escapeText(new Date(event.at).toLocaleTimeString()),
+                escapeText(event.phase),
+                pill(event.status),
+                escapeText(event.detail),
+              ]),
+            )
+          : '<p class="muted">No timeline recorded for this run.</p>';
+        const assumptions = Array.isArray(audit.assumptions)
+          ? "<ul>" +
+            audit.assumptions
+              .map((item) => "<li>" + escapeText(item) + "</li>")
+              .join("") +
+            "</ul>"
+          : rowsTable(
+              ["Input", "Saved value"],
+              Object.entries(audit.assumptions).map(([key, value]) => [
+                escapeText(key),
+                escapeText(value),
+              ]),
+            );
+        const primaryFiles = audit.artifacts
+          .filter((file) =>
+            ["Excel workbook", "Screen report", "All companies CSV"].includes(
+              file.label,
+            ),
+          )
+          .map((file) => fileLink(file))
+          .join("");
+        const candidates = audit.companies
+          ? rowsTable(
+              [
+                "Company",
+                "Price (USD)",
+                "P/E",
+                "FCF yield",
+                "Signal / limitation",
+              ],
+              [...audit.companies]
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 10)
+                .map((company) => [
+                  escapeText(company.ticker),
+                  money(company.metrics.price),
+                  Number.isFinite(company.metrics.pe)
+                    ? company.metrics.pe.toFixed(1)
+                    : "—",
+                  Number.isFinite(company.metrics.vendor_fcf_yield)
+                    ? (100 * company.metrics.vendor_fcf_yield).toFixed(1) + "%"
+                    : "—",
+                  escapeText(
+                    company.candidate
+                      ? company.signals.join("; ")
+                      : company.flags.join("; "),
+                  ),
+                ]),
+            )
+          : "";
+        const sources = rowsTable(
+          ["Filing", "Period", "Filed"],
+          audit.sources.map((source) => [
+            /^https:\/\/(www\.)?sec\.gov\//.test(source.source_url)
+              ? `<a target="_blank" rel="noopener" title="${escapeText(source.accession)}" href="${escapeText(source.source_url)}">${escapeText(source.form)}</a>`
+              : escapeText(source.form),
+            `<time>${escapeText(source.measurement_date)}</time>`,
+            `<time>${escapeText(source.filing_date)}</time>`,
+          ]),
+        );
+        $("#audit").innerHTML = `
+    <div class="audit-head"><h2>${escapeText(audit.ticker || "Run in progress")}</h2><div class="audit-meta">${pill(audit.status)}<span>Evidence ${pill(audit.integrity)}</span></div></div>
+    ${value ? `<div class="facts"><div><small>Scenario value / share</small><strong>${money(value.per_share_value)}</strong></div><div><small>WACC assumption</small><strong>${Number.isFinite(value.wacc) ? (value.wacc * 100).toFixed(2) + "%" : "—"}</strong></div><div class="date"><small>Financial period</small><strong>${escapeText(audit.measurement_date)}</strong></div></div><p class="notice">Provisional scenario. Review assumptions and one-offs before using this value.</p>` : ""}
+    ${audit.counts ? `<p class="notice">${audit.counts.universe} companies · ${audit.counts.basic_pass} passed filters · ${audit.counts.candidates} candidates · ${audit.counts.shortlist} shortlisted</p>` : ""}
+    <div class="links primary-link">${primaryFiles || '<p class="muted">No published outputs yet.</p>'}</div>
+    ${audit.companies ? "<h3>Companies</h3>" + candidates + '<p class="notice">Top ten by research score. FCF yield uses unnormalized vendor cash flow; definitions are in the report.</p>' : ""}
+    <details ${audit.integrity !== "PASS" ? "open" : ""}><summary>Checks · ${passed}/${audit.checks.length} passed</summary><div class="checks">${checks || '<p class="muted">Checks appear as files are produced.</p>'}</div></details>
+    ${audit.sources.length ? "<h3>Filings</h3>" + sources : ""}
+    <details ${audit.status === "INCOMPLETE" ? "open" : ""}><summary>Timeline · ${audit.events.length} events</summary>${events}</details>
+    <details><summary>Assumptions</summary>${audit.analyst?.rationale ? "<p>" + escapeText(audit.analyst.rationale) + "</p>" : ""}${assumptions}</details>
+    <details ${audit.status === "BLOCKED" || audit.integrity === "FAIL" ? "open" : ""}><summary>Limitations · ${audit.warnings.length}</summary><ul>${audit.warnings.map((warning) => "<li>" + escapeText(warning) + "</li>").join("")}</ul></details>
+    ${
+      audit.allocations
+        ? "<details><summary>Classifications</summary>" +
+          rowsTable(
+            ["Group", "Basis", "Value"],
+            audit.allocations.map((item) => [
+              escapeText(item.group),
+              escapeText(item.basis),
+              escapeText(item.value),
+            ]),
+          ) +
+          "</details>"
+        : ""
+    }
+    ${
+      audit.evidence
+        ? "<details><summary>Source trace · " +
+          audit.evidence.length +
+          " records</summary>" +
+          rowsTable(
+            ["ID", "Concept", "Period", "Value / units", "File / line"],
+            audit.evidence.map((item) => [
+              escapeText(item.id),
+              escapeText(item.concept),
+              escapeText(item.column),
+              escapeText(item.display_value) + " " + escapeText(item.units),
+              escapeText(item.file) + ":" + escapeText(item.line),
+            ]),
+          ) +
+          "</details>"
+        : ""
+    }
+    <details><summary>Files · ${audit.artifacts.length}</summary><div class="file-list">${audit.artifacts.map((file) => fileLink(file)).join("")}</div></details>
+    <details><summary>Run record</summary><p class="run-path">${escapeText(audit.id)}</p>${job ? `<p class="muted">${escapeText(job.status)} · ${escapeText(job.started_at || job.created_at)}${job.finished_at ? " → " + escapeText(job.finished_at) : ""}</p><pre>${escapeText(job.log || "No log recorded.")}</pre>` : ""}</details>`;
+        if (scroll) {
+          $("#audit").setAttribute("tabindex", "-1");
+          $("#audit").focus({ preventScroll: true });
+          $("#audit").scrollIntoView({ behavior: "auto", block: "start" });
+        }
+      }
+      async function start(payload) {
+        if (submitting || active) return;
+        $("#error").style.display = "none";
+        submitting = true;
+        updateButtons();
+        const form = $(
+          payload.action === "screen" ? "#screen-form" : "#deep-form",
+        );
+        const button = form.querySelector("button[type=submit]");
+        const label = button.textContent;
+        button.textContent = "Starting…";
+        form.setAttribute("aria-busy", "true");
+        try {
+          const job = await api("/api/jobs", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Workbench-Token": token,
+            },
+            body: JSON.stringify(payload),
+          });
+          selectedRun = job.output;
+          await refresh();
+          await inspect(job.output);
+        } finally {
+          submitting = false;
+          form.removeAttribute("aria-busy");
+          button.textContent = label;
+          updateButtons();
+        }
+      }
+      $("#screen-form").onsubmit = (event) => {
+        event.preventDefault();
+        start({ action: "screen", tickers: $("#tickers").value }).catch(error);
+      };
+      $("#deep-form").onsubmit = (event) => {
+        event.preventDefault();
+        try {
+          const payload = {
+            action: "deep",
+            screen: $("#screen-choice").value,
+            ticker: $("#ticker-choice").value,
+          };
+          if ($("#assumptions").value.trim())
+            payload.assumptions = JSON.parse($("#assumptions").value);
+          start(payload).catch(error);
+        } catch (e) {
+          $("#assumptions").setAttribute("aria-invalid", "true");
+          $("#assumptions").setAttribute("aria-errormessage", "error");
+          error(
+            Error("Scenario JSON is invalid. Check its syntax and try again."),
+          );
+          $("#assumptions").focus();
+        }
+      };
+      $("#assumptions").oninput = () => {
+        if ($("#assumptions").hasAttribute("aria-invalid")) {
+          $("#error").style.display = "none";
+          $("#assumptions").removeAttribute("aria-invalid");
+          $("#assumptions").removeAttribute("aria-errormessage");
+        }
+      };
+      $("#screen-choice").onchange = () => loadCompanies().catch(error);
+      $("#ticker-choice").onchange = companyNote;
+      $("#filter").oninput = renderRuns;
+      $("#refresh").onclick = () => refresh().catch(error);
+      refresh().catch(error);
+      setInterval(() => {
+        if (active) refresh().catch(error);
+      }, 2500);
+    </script>
+  </body>
+</html>

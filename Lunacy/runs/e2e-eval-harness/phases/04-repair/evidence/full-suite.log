@@ -1,3 +1,0 @@
-Command: $env:PYTHONPATH='src'; $env:OPENAI_API_KEY=''; C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests -q -p no:cacheprovider
-Result: 247 passed, 3 warnings, 84 subtests passed in 17.09s
-Warnings: EdgarTools deprecation warnings only.

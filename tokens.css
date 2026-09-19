@@ -1,0 +1,33 @@
+/* Hallmark · genre: editorial · theme: Newsprint · local font pairing */
+:root {
+  --color-paper: oklch(97.5% 0.008 80);
+  --color-paper-2: oklch(94.5% 0.012 80);
+  --color-ink: oklch(23% 0.01 60);
+  --color-muted: oklch(46% 0.014 60);
+  --color-rule: oklch(82% 0.012 80);
+  --color-control: oklch(57% 0.012 60);
+  --color-accent: oklch(41% 0.085 35);
+  --color-accent-ink: var(--color-paper);
+  --color-focus: var(--color-control);
+  --color-success: oklch(38% 0.05 155);
+  --color-error: oklch(40% 0.12 25);
+  --color-clear: transparent;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: Consolas, "Courier New", monospace;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-xl: 1.5rem;
+  --space-2xl: 2rem;
+  --space-3xl: 3rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-heading: 1.75rem;
+  --text-display: clamp(2rem, 3.4vw, 2.75rem);
+  --radius-control: 2px;
+  --rule-width: 1px;
+  --control-height: 44px;
+}
