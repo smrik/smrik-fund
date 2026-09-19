@@ -53,13 +53,14 @@ CONTROL_BOUNDS = {
 	"terminal_growth": (0, 0.04), "share_price_proxy": (0.01, 1000000),
 }
 DEFAULT_CONTROLS = dict(zip(CONTROL_BOUNDS, [0.05, 0.10, 8, 5, 0.025, 0.4, 0.04, 0.05, 1.1, 0.045, 0.025, 250], strict=True))
+POLICY_CONTROL_BOUNDS = {"forecast_tax_rate": (0, 0.6)}
 
 
 def validate_controls(controls: dict) -> None:
-	if not set(CONTROL_BOUNDS).issubset(controls) or set(controls) - (set(CONTROL_BOUNDS) | set(COST_CONTROL_BOUNDS)):
+	if not set(CONTROL_BOUNDS).issubset(controls) or set(controls) - (set(CONTROL_BOUNDS) | set(COST_CONTROL_BOUNDS) | set(POLICY_CONTROL_BOUNDS)):
 		raise ValueError("Missing or unsupported forecast control")
 	for key in controls:
-		low, high = {**CONTROL_BOUNDS, **COST_CONTROL_BOUNDS}[key]
+		low, high = {**CONTROL_BOUNDS, **COST_CONTROL_BOUNDS, **POLICY_CONTROL_BOUNDS}[key]
 		value = controls[key]
 		if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or not low <= value <= high:
 			raise ValueError(f"Invalid forecast control: {key}")

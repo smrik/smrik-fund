@@ -254,6 +254,45 @@ def published_run(tmp_path):
 	return run
 
 
+@pytest.mark.parametrize("changed", ["research-packet.json", "IC.md", "IC-reviewed.md"])
+def test_assessment_audit_detects_changed_research_or_conclusion(
+	published_run, tmp_path, changed
+):
+	from smrik_fund.analysis_budget import content_hash
+	from smrik_fund.research_audit import file_hash
+
+	run = published_run
+	packet = {"excerpts": [{"id": "E1", "text": "Reported source"}]}
+	write_json(run / "research-packet.json", packet)
+	(run / "IC.md").write_text("Synthetic test conclusion")
+	(run / "IC-reviewed.md").write_text("Synthetic independently reviewed conclusion")
+	write_json(
+		run / "ic-review-audit.json",
+		{"artifacts": {"IC-reviewed.md": file_hash(run / "IC-reviewed.md")}},
+	)
+	model_path = run / "reviewed/model.json"
+	model = json.loads(model_path.read_text())
+	model["research_packet_hash"] = content_hash(packet)
+	write_json(model_path, model)
+	version = json.loads((run / "version.json").read_text())
+	version["model_sha256"] = file_hash(model_path)
+	write_json(run / "version.json", version)
+	write_json(
+		run / "assessment-audit.json",
+		{
+			"artifacts": {
+				name: file_hash(run / name)
+				for name in ("research-packet.json", "IC.md")
+			}
+		},
+	)
+	assert audit_run(run, tmp_path)["integrity"] == "PASS"
+	(run / changed).write_text(
+		"{}" if changed.endswith(".json") else "Changed conclusion"
+	)
+	assert audit_run(run, tmp_path)["integrity"] == "FAIL"
+
+
 def test_frozen_template_audit_detects_changes(published_run, tmp_path):
 	from smrik_fund.research_audit import file_hash
 
