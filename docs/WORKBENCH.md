@@ -196,3 +196,7 @@ The contract suite runs without paid calls. Two optional KO/HD financial tests
 skip when their frozen local SEC cases are absent. Broader integration tests use
 locally downloaded cases and the Node spreadsheet runtime. A full historical
 suite is not currently clean; see [status](V1_STATUS.md).
+
+## Financial workbook
+
+See [history and statement layout](FINANCIAL_HISTORY.md) for the five-year history, TTM comparison, local formulas and source audit.

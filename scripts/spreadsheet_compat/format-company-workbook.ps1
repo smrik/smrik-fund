@@ -5,17 +5,26 @@ $snapshot = Get-Content -LiteralPath $SnapshotPath -Raw | ConvertFrom-Json
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
+$excel.AutomationSecurity = 3
 $book = $null
 try {
-    $book = $excel.Workbooks.Open($targetWorkbook)
+    $book = $excel.Workbooks.Open($targetWorkbook,0)
     foreach ($sheet in $book.Worksheets) {
         $sheet.UsedRange.Font.Name = 'Aptos'
         $sheet.UsedRange.Font.Size = 10
         $sheet.Columns.Item('A').ColumnWidth = 59
-        $sheet.Range('B:L').ColumnWidth = 17
+        $sheet.Range($sheet.Cells.Item(1,2), $sheet.Cells.Item(1,[Math]::Max(12,$sheet.UsedRange.Columns.Count))).EntireColumn.ColumnWidth = 17
+        $sheet.Rows.Item(3).RowHeight = 42
+        $sheet.Rows.Item(3).WrapText = $true
         $sheet.Rows.Item(1).RowHeight = 30
         $sheet.Rows.Item(2).RowHeight = 32
         $sheet.Range('A1:L2').WrapText = $true
+        $lastColumn=[Math]::Max(2,$sheet.UsedRange.Columns.Count)
+        foreach ($r in @(1,2)) {
+            $heading=$sheet.Range($sheet.Cells.Item($r,1),$sheet.Cells.Item($r,$lastColumn))
+            $heading.Merge() | Out-Null
+            $heading.VerticalAlignment=-4108
+        }
         $sheet.PageSetup.Orientation = 2
         $sheet.PageSetup.Zoom = $false
         $sheet.PageSetup.FitToPagesWide = 1
@@ -47,7 +56,7 @@ try {
     $review.Range('B5').NumberFormat = '0.00%'
     $review.Range('D3:D8').Hyperlinks.Delete()
     $row = 3
-    foreach ($name in @('Inputs','History','Evidence','Schedules','DCF','Sensitivity')) {
+    foreach ($name in @('Income','BalanceSheet','CashFlow','History','DCF','Sensitivity')) {
         $review.Hyperlinks.Add($review.Cells.Item($row,4), '', "'$name'!A1", "Open $name", "Open $name") | Out-Null
         $row++
     }
@@ -57,19 +66,85 @@ try {
     $dcf = $book.Worksheets.Item('DCF')
     $value = [double]$dcf.Range('B19').Value2
     if ([Math]::Abs($value - [double]$snapshot.per_share_value) -gt 0.000001) { throw 'Native Excel valuation differs from Mog' }
-    $schedules = $book.Worksheets.Item('Schedules')
     $maximum = 0.0
     $valuesChecked = 0
-    for ($r = 4; $r -le 55; $r++) {
-        $label = [string]$schedules.Cells.Item($r,1).Value2
-        $expected = $snapshot.schedules.PSObject.Properties[$label].Value
-        for ($c = 2; $c -le 12; $c++) {
-            $difference = [Math]::Abs([double]$schedules.Cells.Item($r,$c).Value2 - [double]$expected[$c-2])
-            $maximum = [Math]::Max($maximum,$difference)
+    foreach ($metric in $snapshot.schedule_cells.PSObject.Properties) {
+        $expected = $snapshot.schedules.PSObject.Properties[$metric.Name].Value
+        for ($i=0; $i -lt $metric.Value.Count; $i++) {
+            $binding=$metric.Value[$i]
+            if ($null -ne $binding.constant) { $actual=[double]$binding.constant }
+            else { $actual=[double]$book.Worksheets.Item($binding.sheet).Range($binding.cell).Value2 }
+            $difference=[Math]::Abs($actual-[double]$expected[$i])
+            $maximum=[Math]::Max($maximum,$difference)
             $valuesChecked++
         }
     }
-    if ($maximum -gt 0.000001) { throw 'Native Excel schedule values differ from Mog' }
+    if ($maximum -gt 0.000001) { throw 'Native Excel statement values differ from formula engine' }
+    $historyChecked=0
+    foreach ($item in $snapshot.historical_checks) {
+        $actual=$book.Worksheets.Item($item.sheet).Range($item.cell).Value2
+        if ($null -eq $actual -or [Math]::Abs([double]$actual-[double]$item.value) -gt 0.000001) { throw "Historical source mismatch: $($item.sheet)!$($item.cell)" }
+        $historyChecked++
+    }
+    foreach ($name in @('Income','BalanceSheet','CashFlow','Assets','WorkingCapital')) {
+        $sheet=$book.Worksheets.Item($name)
+        $last=$sheet.UsedRange.Columns.Count
+        $historicalEnd=[int]$snapshot.presentation.history_columns+2
+        $sheet.Range($sheet.Cells.Item(3,2),$sheet.Cells.Item(3,$historicalEnd)).Interior.Color=15132390
+        $sheet.Range($sheet.Cells.Item(3,$historicalEnd+1),$sheet.Cells.Item(3,$last)).Interior.Color=15917529
+        $sheet.PageSetup.PrintArea=$sheet.UsedRange.Address()
+        $sheet.Range($sheet.Cells.Item(4,2),$sheet.Cells.Item($sheet.UsedRange.Rows.Count,$last)).Font.Color=0
+        try {
+            $formulaCells=$sheet.UsedRange.SpecialCells(-4123)
+            foreach ($cell in $formulaCells.Cells) {
+                if ([string]$cell.Formula -match '!') { $cell.Font.Color=32768 }
+            }
+        } catch { }
+        $totals=switch ($name) {
+            'Income' { @(8,19,27,31) }
+            'BalanceSheet' { @(15,24,29,32) }
+            'CashFlow' { @(14,20,25,30,33,35) }
+            'Assets' { @(14,22) }
+            'WorkingCapital' { @(23,25) }
+        }
+        foreach ($r in $totals) {
+            $range=$sheet.Range($sheet.Cells.Item($r,1),$sheet.Cells.Item($r,$last))
+            $range.Font.Bold=$true
+            $range.Borders.Item(8).LineStyle=1
+            $range.Borders.Item(8).Weight=2
+        }
+        $sheet.Columns.Item('A').WrapText=$true
+        $sheet.UsedRange.Rows.AutoFit() | Out-Null
+        $sheet.Rows.Item(1).RowHeight=30
+        $sheet.Rows.Item(2).RowHeight=32
+        $sheet.Rows.Item(3).RowHeight=42
+    }
+    $income=$book.Worksheets.Item('Income')
+    $noteRow=$income.UsedRange.Rows.Count
+    $income.Range($income.Cells.Item($noteRow,1),$income.Cells.Item($noteRow,$income.UsedRange.Columns.Count)).Merge() | Out-Null
+    $income.Rows.Item($noteRow).RowHeight=44
+    foreach ($name in @('Income','Assets','WorkingCapital','CashFlow')) {
+        $sheet=$book.Worksheets.Item($name)
+        foreach ($driver in $snapshot.presentation.drivers.PSObject.Properties[$name].Value.PSObject.Properties) {
+            $r=[int]$driver.Name
+            $range=$sheet.Range($sheet.Cells.Item($r,2),$sheet.Cells.Item($r,$sheet.UsedRange.Columns.Count))
+            $range.NumberFormat=if ($name -eq 'Assets' -and $r -in @(16,24)) {'0.0x'} else {'0.0%'}
+            $range.Font.Italic=$true
+        }
+    }
+    $book.Worksheets.Item('Income').Rows.Item(20).NumberFormat='0.0%'
+    $book.Worksheets.Item('Income').Rows.Item(32).NumberFormat='0.0%'
+    $book.Worksheets.Item('DCF').Rows.Item(37).NumberFormat='0.0%'
+    $dcf.Rows.Item(25).WrapText=$true
+    $dcf.Rows.Item(25).RowHeight=42
+    $dcf.Rows.Item(25).Font.Bold=$true
+    $dcf.Range($dcf.Cells.Item(25,1),$dcf.Cells.Item(25,$dcf.UsedRange.Columns.Count)).Interior.Color=15132390
+    $dcf.Rows.Item(44).NumberFormat='0.00x'
+    $formulaErrors=@()
+    foreach ($sheet in $book.Worksheets) {
+        try { $errors=$sheet.UsedRange.SpecialCells(-4123,16); foreach ($cell in $errors.Cells) { $formulaErrors += "$($sheet.Name)!$($cell.Address()): $($cell.Text)" } } catch { }
+    }
+    if ($formulaErrors.Count) { throw ($formulaErrors -join '; ') }
     $inputs = $book.Worksheets.Item('Inputs')
     $betaCell = $inputs.Cells.Item([int]$snapshot.input_rows.beta,2)
     $priorBeta = [double]$betaCell.Value2
@@ -79,11 +154,15 @@ try {
     $betaCell.Value2 = $priorBeta
     $excel.CalculateFullRebuild()
     if ([Math]::Abs([double]$dcf.Range('B19').Value2-$value) -gt 0.000001) { throw 'Native restoration changed value' }
+    # Lead with the analytical outputs; source and audit tabs remain accessible.
+    foreach ($name in @('Sensitivity','DCF','WorkingCapital','Assets','CashFlow','BalanceSheet','Income','Review')) {
+        $book.Worksheets.Item($name).Move($book.Worksheets.Item(1))
+    }
     $review.Activate()
     $excel.ActiveWindow.ScrollRow = 1
     $excel.ActiveWindow.ScrollColumn = 1
     $book.Save()
-    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
+    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; historical_values_checked=$historyChecked; formula_errors=$formulaErrors.Count; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
 } finally {
     if ($null -ne $book) { $book.Close($false) }
     $excel.Quit()
