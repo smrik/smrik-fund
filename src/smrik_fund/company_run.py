@@ -39,11 +39,12 @@ def fingerprint(path):
 	return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def schema(review=False):
+def schema(review=False, control_names=None):
+	control_names = list(control_names or CONTROL_BOUNDS)
 	controls = {
 		"type": "object",
-		"properties": {key: {"type": "number"} for key in CONTROL_BOUNDS},
-		"required": list(CONTROL_BOUNDS),
+		"properties": {key: {"type": "number"} for key in control_names},
+		"required": control_names,
 		"additionalProperties": False,
 	}
 	properties = {
@@ -79,7 +80,7 @@ def call_model(output_dir, name, payload, *, review, budget_path, prices, client
 				"type": "json_schema",
 				"name": "company_review" if review else "company_assumptions",
 				"strict": True,
-				"schema": schema(review),
+				"schema": schema(review, payload.get("model", {}).get("controls")),
 			}
 		},
 	}
@@ -268,6 +269,7 @@ def run_case(
 			ROOT / "src/smrik_fund/company_case.py",
 			ROOT / "src/smrik_fund/portable_model.py",
 			ROOT / "src/smrik_fund/company_history.py",
+			ROOT / "src/smrik_fund/company_operating.py",
 			ROOT / "src/smrik_fund/company_notes.py",
 		)
 	}
@@ -322,7 +324,7 @@ def run_case(
 		}
 	elif resume_from:
 		analyst = completed_analyst(resume_from, model["case_hash"])
-		model["controls"] = analyst["controls"]
+		model["controls"].update(analyst["controls"])
 		model["analyst"] = analyst
 		save(
 			output_dir / "analyst.reused.json",
@@ -345,10 +347,10 @@ def run_case(
 			budget_path=budget_path,
 			prices=read(price_dir / "luna-price-snapshot.json"),
 		)
-		model["controls"] = analyst["controls"]
+		model["controls"].update(analyst["controls"])
 		model["analyst"] = analyst
 	elif assumptions is not None:
-		model["controls"] = dict(assumptions["controls"])
+		model["controls"].update(assumptions["controls"])
 		model["analyst"] = assumptions
 		model["limitations"].extend(assumptions["limitations"])
 	else:
@@ -359,6 +361,9 @@ def run_case(
 	stage(
 		"calculation", "RUNNING", "Build linked statements, DCF and mechanical checks"
 	)
+	unsupported = set(model["controls"]) - set(model["control_bounds"])
+	if unsupported:
+		raise ValueError(f"Controls lack supported source methods: {sorted(unsupported)}")
 	snapshot = build(model, output_dir / "candidate-0")
 	stage("calculation", "PASS", "Accounting, valuation and local-edit gates passed")
 	review = {"status": "PROVISIONAL_UNREVIEWED", "human_approval": False}

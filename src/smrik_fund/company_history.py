@@ -9,9 +9,12 @@ from datetime import date
 
 import pandas as pd
 
+from smrik_fund.company_operating import reconcile_costs
+
 FLOW_FIELDS = {
 	"continuing_income": ("income_statement", ("IncomeLossFromContinuingOperations",)),
 	"sga_reported": ("income_statement", ("SellingGeneralAndAdministrativeExpense",)),
+	"research_reported": ("income_statement", ("ResearchAndDevelopmentExpense",)),
 	"revenue": (
 		"income_statement",
 		(
@@ -144,6 +147,7 @@ def annual_history(metadata, frames, evidence, years=5):
 	result = []
 	for period in chosen:
 		values, sources = {}, {}
+		unavailable_costs = False
 		for statement in ("income_statement", "balance_sheet", "cash_flow_statement"):
 			column = period["end"] + ("" if statement == "balance_sheet" else " (FY)")
 			candidates = [
@@ -198,6 +202,18 @@ def annual_history(metadata, frames, evidence, years=5):
 						f"{period['label']} {key}: ambiguous source rows; left blank."
 					)
 				values[key] = value
+				if (
+					key
+					in (
+						"cost_of_revenue",
+						"sga_reported",
+						"research_reported",
+						"gross_profit",
+					)
+					and len(matches)
+					and value is None
+				):
+					unavailable_costs = True
 			if statement != "balance_sheet":
 				windows = [
 					p
@@ -212,6 +228,31 @@ def annual_history(metadata, frames, evidence, years=5):
 						f"Ambiguous annual history duration: {period['end']}"
 					)
 		groups = {}
+		costs = (
+			None
+			if unavailable_costs
+			else reconcile_costs(
+				values.get("revenue"),
+				values.get("ebit"),
+				{
+					k: values[field]
+					for k, field in (
+						("cogs", "cost_of_revenue"),
+						("sga", "sga_reported"),
+						("research", "research_reported"),
+					)
+					if values.get(field) is not None
+				},
+				values.get("gross_profit"),
+			)
+		)
+		for key in ("cogs", "sga", "research"):
+			values[f"cost_{key}"] = costs["values"].get(key) if costs else None
+		if costs:
+			groups["operating_costs"] = {
+				"value": sum(costs["values"].values()),
+				"basis": f"Expense magnitudes reconcile to revenue minus EBIT. Raw signs retained; presentation multipliers: {costs['sign_multipliers']}",
+			}
 		balance_source = sources.get("balance_sheet")
 		if balance_source:
 			frame = frames[balance_source["accession"]]["balance_sheet"]

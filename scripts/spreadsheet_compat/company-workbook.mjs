@@ -27,6 +27,7 @@ if (
 )
   throw Error("Unsupported model");
 const aggregate = model.method === "consolidated-development-v1";
+const costComponents = model.operating_costs?.components ?? [];
 const displayNames = aggregate
   ? {
       receivables: "Operating current assets (derived aggregate)",
@@ -157,7 +158,9 @@ for (const [key, value] of Object.entries(model.controls))
   input(
     key,
     value,
-    "AGENT-SELECTED DEVELOPMENT ASSUMPTION; not a sourced market observation",
+    costComponents.some((c) => c.control === key)
+      ? "Expense / revenue assumption; default = reconciled TTM expense magnitude / revenue. Includes embedded D&A/SBC."
+      : "AGENT-SELECTED DEVELOPMENT ASSUMPTION; not a sourced market observation",
   );
 const I = (key) => `Inputs!$B$${indices[key]}`;
 const inputs = await table("Inputs", inputRows);
@@ -208,9 +211,10 @@ for (const name of ["Products", "Services"])
   );
 row("Revenue", (c) => `SUM(${c}6:${c}7)`); //8
 for (const name of ["cost_of_sales", "research", "sga"])
-  row(
-    displayNames[name] ?? name,
-    (c) => `${c}8*${I("ttm_" + name)}/${I("ttm_revenue")}`,
+  row(displayNames[name] ?? name, (c) =>
+    name === "cost_of_sales" && costComponents.length
+      ? `${c}8*(${costComponents.map((x) => I(x.control)).join("+")})`
+      : `${c}8*${I("ttm_" + name)}/${I("ttm_revenue")}`,
   ); //9-11
 row(
   "Gross operating costs (includes embedded D&A and SBC)",
@@ -473,10 +477,12 @@ for (const [r, label, metric] of [
 for (let j = 1; j <= view.historyColumns + 1; j++) {
   const c = letter(j);
   dcfRows[25][j] = F(`IF(ISNUMBER(Income!${c}8),Income!${c}8,"")`);
-  dcfRows[26][j] = F(`IF(ISNUMBER(Income!${c}19),Income!${c}19,"")`);
+  dcfRows[26][j] = F(`IF(ISNUMBER(Income!${c}38),Income!${c}38,"")`);
   dcfRows[28][j] = F(`IF(ISNUMBER(Assets!${c}6),Assets!${c}6,"")`);
   dcfRows[29][j] = F(`IF(ISNUMBER(Assets!${c}11),Assets!${c}11,"")`);
-  dcfRows[30][j] = F(`IF(ISNUMBER(WorkingCapital!${c}25),WorkingCapital!${c}25,"")`);
+  dcfRows[30][j] = F(
+    `IF(ISNUMBER(WorkingCapital!${c}25),WorkingCapital!${c}25,"")`,
+  );
   dcfRows[34][j] = F(`IF(ISNUMBER(CashFlow!${c}33),CashFlow!${c}33,"")`);
 }
 await table("DCF", dcfRows);
@@ -603,6 +609,7 @@ async function snapshot() {
       history_columns: view.historyColumns,
       headers: view.headings,
       drivers: view.drivers,
+      income_percent_rows: view.incomePercentRows,
     },
   };
   for (let r = 4; r <= 55; r++) {
@@ -615,17 +622,30 @@ async function snapshot() {
     );
   }
   result.formula_examples = Object.fromEntries(
-    rows
-      .slice(3)
-      .map((r) => [
-        r[0],
-        [
-          view.relocate(r[1].formula, ""),
-          view.relocate(r[2].formula, ""),
-          view.relocate(r[11].formula, ""),
-        ],
-      ]),
+    rows.slice(3).map((r, offset) => [
+      r[0],
+      [0, 1, 10].map((i) => {
+        const a = view.address(i, offset + 4);
+        if (a.constant === 0) return "=0";
+        if (a.sheet === "Stub") return r[1].formula;
+        const row = Number(a.cell.replace(/[A-Z]/g, ""));
+        const column = [...a.cell.replace(/\d/g, "")].reduce(
+          (n, c) => n * 26 + c.charCodeAt(0) - 64,
+          0,
+        );
+        return view.grids[a.sheet]?.[row - 1]?.[column - 1]?.formula ?? null;
+      }),
+    ]),
   );
+  result.operating_checks = [];
+  for (const p of view.forecast) {
+    for (const r of [11, 14, 17, 20, 26, 29, 32, 35, 36, 38]) {
+      const cell = `${view.column(p.index)}${r}`;
+      const value = await (await wb.getSheet("Income")).getValue(cell);
+      if (typeof value === "number")
+        result.operating_checks.push({ sheet: "Income", cell, value });
+    }
+  }
   result.dcf_formulas = Object.fromEntries(
     dcfRows.slice(3, 21).map((r) => [r[0], r[1].formula]),
   );
@@ -657,6 +677,35 @@ try {
       (missing.per_share_value === "" || missing.per_share_value === null),
     restored_identical: true,
   };
+  if (costComponents.length) {
+    const control = costComponents[0].control;
+    await inputs.setCell(
+      `B${indices[control]}`,
+      model.controls[control] + 0.01,
+    );
+    await wb.calculate();
+    const costEdit = await snapshot();
+    const firstAnnual = view.forecast[0].index;
+    const revenue = base.schedules.Revenue[firstAnnual];
+    proof.cost_edit_changes_ebit =
+      Math.abs(
+        base.schedules.EBIT[firstAnnual] -
+          costEdit.schedules.EBIT[firstAnnual] -
+          revenue * 0.01,
+      ) < 1e-6;
+    proof.cost_edit_changes_value =
+      costEdit.per_share_value < base.per_share_value;
+    proof.cost_edit_invalidates_review =
+      costEdit.review_status === "EDITED_UNREVIEWED";
+    await inputs.setCell(`B${indices[control]}`, null);
+    await wb.calculate();
+    proof.missing_cost_blocks_value =
+      (await snapshot()).valuation_gate === "BLOCKED";
+    await inputs.setCell(`B${indices[control]}`, model.controls[control]);
+    await wb.calculate();
+    if (JSON.stringify(await snapshot()) !== JSON.stringify(base))
+      throw Error("Expense driver restoration changed model");
+  }
   if (Object.values(proof).some((x) => x === false))
     throw Error(`Local-edit proof failed: ${JSON.stringify(proof)}`);
   const out = resolve(process.argv[3]);

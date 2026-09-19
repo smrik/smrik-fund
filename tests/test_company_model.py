@@ -112,7 +112,7 @@ def test_free_operator_assumptions_are_applied_and_recorded(tmp_path, monkeypatc
 	result = company_run.run_case("AAPL", CASE, tmp_path / "manual", assumptions=assumptions, native_excel=False)
 	model = json.loads((tmp_path / "manual/reviewed/model.json").read_text())
 	assert result["status"] == "PROVISIONAL_UNREVIEWED"
-	assert model["controls"] == assumptions["controls"]
+	assert {k: model["controls"][k] for k in assumptions["controls"]} == assumptions["controls"]
 	assert model["analyst"] == assumptions
 	assert json.loads((tmp_path / "manual/operator-assumptions.json").read_text()) == assumptions
 	with pytest.raises(ValueError, match="new free run"):

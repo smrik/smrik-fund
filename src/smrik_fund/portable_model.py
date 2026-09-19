@@ -21,6 +21,7 @@ from smrik_fund.company_model import (
 	validate_controls,
 )
 from smrik_fund.company_notes import note_claims
+from smrik_fund.company_operating import COST_CONTROL_BOUNDS, operating_costs
 
 
 def flow_windows(annual, latest):
@@ -76,7 +77,10 @@ def prepare_model(case_dir, controls=None):
 		json.loads((case_dir / a / "filing.json").read_text())
 		for a in manifest["selected_filings"]
 	]
-	annual = max((m for m in metadata if m["form"] == "10-K"), key=lambda m: m["measurement_date"])
+	annual = max(
+		(m for m in metadata if m["form"] == "10-K"),
+		key=lambda m: m["measurement_date"],
+	)
 	latest = max(metadata, key=lambda m: m["measurement_date"])
 	frames = {
 		m["accession"]: {
@@ -544,6 +548,37 @@ def prepare_model(case_dir, controls=None):
 	}
 	flow["research"] = dict.fromkeys(flow["revenue"], 0)
 	flow["sga"] = dict.fromkeys(flow["revenue"], 0)
+
+	def optional_cost_history(concepts):
+		counts = [
+			face(m, "income_statement")
+			.concept.isin(["us-gaap_" + c for c in concepts])
+			.sum()
+			for m in metadata
+		]
+		if not any(counts):
+			return None
+		if any(count != 1 for count in counts):
+			raise ValueError(
+				f"Missing/ambiguous expense disclosure across FY/YTD: {concepts}"
+			)
+		return history("income_statement", concepts)
+
+	cost_build = operating_costs(
+		flow, optional_cost_history, has_interim=cp is not None
+	)
+	allocations.append(
+		{
+			"group": "operating cost composition",
+			"basis": cost_build["reason"]
+			+ (
+				f" Per-period sign conversions and EBIT differences: {cost_build['bridges']}"
+				if cost_build["status"] == "detailed"
+				else ""
+			),
+			"value": flow["cost_of_sales"]["ttm"],
+		}
+	)
 	if (
 		flow["capex_cash"]["ttm"] > 0
 		or flow["revenue"]["ttm"] <= 0
@@ -678,6 +713,15 @@ def prepare_model(case_dir, controls=None):
 	chosen["payout_ratio"] = 0 if controls is None else chosen["payout_ratio"]
 	chosen["services_growth"] = 0
 	chosen["intangible_additions_ratio"] = 0
+	for component in cost_build["components"]:
+		chosen.setdefault(component["control"], component["ttm_ratio"])
+	unsupported = set(chosen).intersection(COST_CONTROL_BOUNDS) - {
+		c["control"] for c in cost_build["components"]
+	}
+	if unsupported:
+		raise ValueError(
+			f"Expense controls lack reconciled source components: {sorted(unsupported)}"
+		)
 	validate_controls(chosen)
 	return {
 		"schema_version": "company-dcf-development-v1",
@@ -691,6 +735,7 @@ def prepare_model(case_dir, controls=None):
 		"units": "USD millions, million shares, USD/share",
 		"opening": opening,
 		"history": flow,
+		"operating_costs": cost_build,
 		"annual_history": annual_trends,
 		"history_windows": {"annual": fy, "current_ytd": cp, "prior_ytd": pp},
 		"segments": {
@@ -703,13 +748,19 @@ def prepare_model(case_dir, controls=None):
 		"periods": periods,
 		"normalized_tax_rate": tax_rate,
 		"controls": chosen,
-		"control_bounds": CONTROL_BOUNDS,
+		"control_bounds": {
+			**CONTROL_BOUNDS,
+			**{
+				c["control"]: COST_CONTROL_BOUNDS[c["control"]]
+				for c in cost_build["components"]
+			},
+		},
 		"evidence": evidence,
 		"allocations": allocations,
 		"review": {"status": "PROVISIONAL_UNREVIEWED", "human_approval": False},
 		"limitations": [
 			"Consolidated development scenario: no segment forecast. Revenue growth controls the whole company; additional revenue slots are structural zeros, not missing source facts.",
-			"Operating expense = reported revenue minus operating income; pretax is reported when available, otherwise net income plus tax; tax expense is derived from the checked earnings bridge while signed reported tax is retained separately. Separate R&D/SG&A slots are structural zeros because expenses are aggregated. Discontinued/minority earnings require separate review.",
+			cost_build["reason"],
 			"Current operating assets/liabilities are explicit reported parent-minus-component groups and scale with revenue; tax accruals, leases and deferred revenue remain aggregated. No balance plugs.",
 			"Only separately presented borrowing and investment amounts are isolated; components embedded in other balances remain there. Debt uses carrying values and constant refinancing; investments use carrying-value and scenario-yield proxies.",
 			"Total historical D&A is provisionally assigned to disclosed PPE/finite-intangible pools by carrying weights; forecast uses declining balance with half-period additions. Hidden intangible detail remains in other balances; no claim of sourced depreciation lives.",
