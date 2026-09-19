@@ -1,5 +1,7 @@
 # V1 Status
 
+The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
+
 ## Weekend valuation pack — completed 2026-09-16
 
 Prepared LULU, HPQ and BBWI for September 19–20:
