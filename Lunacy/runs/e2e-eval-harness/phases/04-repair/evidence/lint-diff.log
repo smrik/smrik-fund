@@ -1,5 +1,0 @@
-Command: .venv\Scripts\ruff.exe check src\smrik_fund\eval_cases.py src\smrik_fund\eval_core.py src\smrik_fund\eval_workflows.py tests\test_eval_harness.py
-Result: All checks passed!
-
-Command: git diff --check
-Result: clean; Git emitted existing LF-to-CRLF working-copy warnings for six pre-existing dirty tracked product files.

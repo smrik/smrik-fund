@@ -1,6 +1,0 @@
-warning: in the working copy of 'prompts/financial_investigation.md', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'src/smrik_fund/ingestion/filing_investigation.py', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'src/smrik_fund/ingestion/segments.py', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'src/smrik_fund/main.py', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'tests/test_filing_investigation.py', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'tests/test_segments.py', LF will be replaced by CRLF the next time Git touches it
