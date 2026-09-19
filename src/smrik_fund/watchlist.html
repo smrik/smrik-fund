@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Smrik Fund · Screener</title>
+    <link rel="stylesheet" href="/tokens.css" />
+    <style>
+      /* Hallmark · editorial · Newsprint · existing product tokens
+ * Structure: universe table with research editor · motion: none
+ * pre-emit critique: P4 H4 E4 S5 R5 V4 */
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        overflow-x: clip;
+      }
+      body {
+        margin: 0;
+        background: var(--color-paper);
+        color: var(--color-ink);
+        font: var(--text-base) / 1.5 var(--font-body);
+      }
+      h1,
+      h2 {
+        font-family: var(--font-display);
+        font-style: normal;
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      h1 {
+        font-size: var(--text-display);
+      }
+      h2 {
+        font-size: var(--text-heading);
+      }
+      p {
+        max-width: 70ch;
+        margin: var(--space-sm) 0 var(--space-lg);
+      }
+      a {
+        color: var(--color-accent);
+        text-underline-offset: 2px;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: var(--color-ink);
+      }
+      button,
+      a,
+      summary {
+        touch-action: manipulation;
+      }
+      button {
+        min-height: 44px;
+        padding: var(--space-sm) var(--space-lg);
+        border: 1px solid var(--color-control);
+        border-radius: var(--radius-control);
+        background: var(--color-paper);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button.primary {
+        background: var(--color-ink);
+        color: var(--color-paper);
+        border-color: var(--color-ink);
+      }
+      button:disabled {
+        color: var(--color-muted);
+        background: var(--color-paper-2);
+        border-color: var(--color-rule);
+        cursor: not-allowed;
+      }
+      button:active:not(:disabled),
+      a:active {
+        color: var(--color-accent);
+      }
+      button.primary:active:not(:disabled) {
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
+      }
+      :focus-visible {
+        outline: 2px solid var(--color-focus);
+        outline-offset: 1px;
+      }
+      input,
+      select,
+      textarea {
+        background: var(--color-paper);
+        min-width: 0;
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--color-control);
+        border-radius: var(--radius-control);
+        padding: var(--space-sm) var(--space-md);
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: var(--color-muted);
+      }
+      textarea {
+        resize: vertical;
+        min-height: 88px;
+      }
+      label {
+        display: block;
+        font-size: var(--text-sm);
+      }
+      label > input,
+      label > select,
+      label > textarea {
+        margin-top: var(--space-xs);
+      }
+      small,
+      .muted {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .danger {
+        color: var(--color-error);
+      }
+      .positive {
+        color: var(--color-success);
+      }
+      .nowrap {
+        white-space: nowrap;
+      }
+      header,
+      main,
+      footer {
+        max-width: 1600px;
+        padding-inline: var(--space-2xl);
+        margin-inline: auto;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: var(--space-lg);
+        padding-block: var(--space-sm);
+        border-bottom: 1px solid var(--color-ink);
+      }
+      .brand {
+        font: 700 var(--text-heading) / 1.2 var(--font-display);
+        color: var(--color-ink);
+        text-decoration: none;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xl);
+        flex-wrap: wrap;
+      }
+      nav a {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        white-space: nowrap;
+        font-size: var(--text-sm);
+      }
+      nav [aria-current="page"] {
+        color: var(--color-ink);
+        font-weight: 600;
+        text-decoration-thickness: 2px;
+      }
+      main {
+        padding-block: var(--space-lg) var(--space-3xl);
+      }
+      footer {
+        border-top: 1px solid var(--color-rule);
+        padding-block: var(--space-lg);
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .heading,
+      .toolbar,
+      .pagination,
+      .dialog-head,
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-lg);
+        flex-wrap: wrap;
+      }
+      .heading {
+        margin-bottom: var(--space-lg);
+      }
+      .heading p {
+        margin-bottom: 0;
+      }
+      .toolbar {
+        align-items: flex-end;
+      }
+      .toolbar label {
+        flex: 1;
+        max-width: 36rem;
+      }
+      .filters {
+        display: block;
+        padding-block: var(--space-lg) 0;
+      }
+      .quick-filters,
+      .number-filters {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1.3fr;
+        gap: var(--space-lg);
+      }
+      .advanced {
+        border: 0;
+        margin-top: var(--space-sm);
+        padding-top: 0;
+      }
+      .status:empty {
+        display: none;
+      }
+      .filters .fresh {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        grid-column: 1/-1;
+      }
+      .fresh input {
+        width: 18px;
+        min-height: 18px;
+        margin: 0;
+        accent-color: var(--color-accent);
+      }
+      .scroll {
+        max-width: 100%;
+        overflow-x: auto;
+        margin-top: var(--space-lg);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: var(--text-sm);
+        font-variant-numeric: tabular-nums;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: var(--space-md);
+        border-bottom: 1px solid var(--color-rule);
+        vertical-align: top;
+      }
+      th {
+        padding-block: var(--space-xs);
+        border-bottom-color: var(--color-ink);
+        font-weight: 600;
+        color: var(--color-muted);
+        white-space: nowrap;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+        padding-left: 0;
+        min-width: 190px;
+      }
+      th:first-child,
+      td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--color-paper);
+      }
+      th:last-child,
+      td:last-child {
+        padding-right: 0;
+      }
+      th button {
+        padding: var(--space-xs);
+        border: 0;
+        background: var(--color-clear);
+        font-size: inherit;
+        color: inherit;
+        font-weight: 600;
+      }
+      .company {
+        border: 0;
+        padding: 0;
+        min-height: 44px;
+        background: var(--color-clear);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .company-name {
+        display: block;
+        max-width: 220px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--color-muted);
+      }
+      td a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        white-space: nowrap;
+      }
+      .number {
+        white-space: nowrap;
+      }
+      .label {
+        white-space: nowrap;
+        font-size: var(--text-sm);
+      }
+      .cell-note {
+        display: block;
+        color: var(--color-muted);
+        font-size: var(--text-sm);
+        white-space: nowrap;
+      }
+      .pagination {
+        padding-block: var(--space-lg);
+      }
+      .pagination .actions {
+        justify-content: flex-end;
+      }
+      .empty {
+        text-align: left;
+        padding-block: var(--space-3xl);
+        color: var(--color-muted);
+      }
+      .error {
+        color: var(--color-error);
+        margin-block: var(--space-lg);
+        overflow-wrap: anywhere;
+      }
+      .status {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+        min-height: 1lh;
+        margin-block: var(--space-sm);
+      }
+      details {
+        border-top: 1px solid var(--color-rule);
+        margin-top: var(--space-lg);
+        padding-top: var(--space-sm);
+      }
+      summary {
+        min-height: 44px;
+        padding-block: var(--space-sm);
+        cursor: pointer;
+        font-size: var(--text-sm);
+        font-weight: 600;
+      }
+      li {
+        margin-bottom: var(--space-sm);
+      }
+      .sources a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        margin-right: var(--space-lg);
+      }
+      dialog {
+        color: var(--color-ink);
+        background: var(--color-paper);
+        border: 1px solid var(--color-control);
+        border-radius: var(--radius-control);
+        width: min(760px, calc(100% - 32px));
+        max-height: 90dvh;
+        padding: var(--space-xl);
+        overflow: auto;
+      }
+      dialog::backdrop {
+        background: var(--color-ink);
+        opacity: 0.35;
+      }
+      .dialog-head {
+        align-items: flex-start;
+      }
+      .dialog-head p {
+        margin-bottom: 0;
+      }
+      dialog form {
+        margin-top: var(--space-xl);
+      }
+      .editor-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-lg);
+      }
+      .wide {
+        grid-column: 1/-1;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--space-lg);
+        margin-block: var(--space-xl);
+      }
+      .metrics dt {
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .metrics dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .actions {
+        justify-content: flex-start;
+        margin-top: var(--space-lg);
+      }
+      .skip {
+        position: fixed;
+        left: var(--space-lg);
+        top: var(--space-sm);
+        transform: translateY(-200%);
+        background: var(--color-paper);
+        padding: var(--space-sm);
+      }
+      .skip:focus {
+        transform: none;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (hover: hover) {
+        button:not(:disabled):hover,
+        input:hover,
+        select:hover,
+        textarea:hover {
+          background: var(--color-paper-2);
+        }
+        button.primary:not(:disabled):hover:not(:focus-visible) {
+          background: var(--color-accent);
+          color: var(--color-accent-ink);
+        }
+        a:hover {
+          text-decoration-thickness: 2px;
+        }
+      }
+      @media (max-width: 40rem) {
+        header,
+        main,
+        footer {
+          padding-inline: var(--space-lg);
+        }
+        .quick-filters,
+        .number-filters {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        th:first-child,
+        td:first-child {
+          min-width: 120px;
+        }
+        .company-name {
+          max-width: 120px;
+        }
+        .quick-filters label:first-child {
+          grid-column: 1/-1;
+        }
+        .heading {
+          align-items: flex-start;
+        }
+        .toolbar {
+          display: block;
+        }
+        .toolbar button {
+          margin-top: var(--space-lg);
+        }
+        .editor-fields {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .pagination {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        dialog {
+          padding: var(--space-lg);
+        }
+        nav {
+          gap: var(--space-lg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#results">Skip to companies</a>
+    <header>
+      <a class="brand" href="/">Smrik Fund</a>
+      <nav aria-label="Workspace">
+        <a href="/screener" id="nav-screen">Screener</a
+        ><a href="/watchlist" id="nav-watch">Watchlist</a
+        ><a href="/">Research</a>
+      </nav>
+    </header>
+    <main>
+      <div class="heading">
+        <div>
+          <h1 id="title">Screener</h1>
+          <p id="scope" class="muted">Loading saved screens…</p>
+        </div>
+        <button id="add" type="button" hidden>Add ticker</button>
+      </div>
+      <div id="error" class="error" role="alert" hidden></div>
+      <div id="status" class="status" role="status"></div>
+      <div class="toolbar">
+        <label id="screen-label">Screen<select id="screen"></select></label>
+        <div class="actions">
+          <button id="run" type="button">Screen US universe</button
+          ><button id="reload" type="button">Reload</button
+          ><button id="export" type="button">Export CSV</button>
+        </div>
+      </div>
+      <form id="filters" class="filters">
+        <div class="quick-filters">
+          <label
+            >Company<input
+              id="search"
+              type="search"
+              placeholder="Ticker or name" /></label
+          ><label
+            >Sector<select id="sector">
+              <option value="">All sectors</option>
+            </select></label
+          ><label>Show<select id="bucket"></select></label>
+        </div>
+        <details class="advanced">
+          <summary>Valuation filters</summary>
+          <div class="number-filters">
+            <label
+              >Max P/E<input
+                id="max-pe"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Any" /></label
+            ><label
+              >Min FCF yield (%)<input
+                id="min-fcf"
+                type="number"
+                step="any"
+                placeholder="Any" /></label
+            ><label
+              >Max net debt / EBITDA<input
+                id="max-debt"
+                type="number"
+                step="any"
+                placeholder="Any" /></label
+            ><label class="fresh"
+              ><input type="checkbox" id="fresh" />Quotes within 7 days</label
+            >
+          </div>
+        </details>
+      </form>
+      <div
+        id="results"
+        class="scroll"
+        tabindex="0"
+        role="region"
+        aria-label="Stock screening results"
+      >
+        <table>
+          <thead id="head"></thead>
+          <tbody id="rows">
+            <tr>
+              <td class="empty">Loading companies…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="count" class="muted"></span>
+        <div class="actions">
+          <button id="previous" type="button">Previous</button
+          ><button id="next" type="button">Next</button>
+        </div>
+      </div>
+      <details id="issues" hidden>
+        <summary>Data issues</summary>
+        <ul id="issue-list"></ul>
+      </details>
+      <details>
+        <summary>Metrics &amp; sources</summary>
+        <p class="muted">
+          Saved Yahoo observations and SEC issuer identities. P/E uses trailing
+          earnings. FCF yield is unnormalized vendor free cash flow / market
+          cap. Net debt / EBITDA and EV / EBITDA apply only to supported
+          operating companies. Missing values stay blank.
+        </p>
+        <p class="muted">
+          The universe uses the saved size, price and liquidity filters; it is
+          not every US listing. Screen candidates and shortlists retain their
+          original rules. Quotes older than 7 days cannot trigger a review-price
+          flag. Your review price is a USD threshold you enter, separate from a
+          provisional DCF scenario.
+        </p>
+        <div id="screen-links" class="sources"></div>
+      </details>
+    </main>
+    <footer>Local research · No paid calls from this page</footer>
+    <dialog id="editor" aria-labelledby="company-title">
+      <div class="dialog-head">
+        <div>
+          <h2 id="company-title">Add ticker</h2>
+          <p id="company-name" class="muted"></p>
+        </div>
+        <button id="close" type="button">Close</button>
+      </div>
+      <div id="company-detail"></div>
+      <form id="save-form">
+        <div class="editor-fields">
+          <label>Ticker<input id="ticker" maxlength="20" required /></label
+          ><label
+            >Research stage<select id="stage">
+              <option>Idea</option>
+              <option>Researching</option>
+              <option>Waiting for price</option>
+              <option>Archived</option>
+            </select></label
+          ><label
+            >Review price (USD)<input
+              id="review-price"
+              type="number"
+              min="0.000001"
+              step="any"
+              placeholder="Optional" /></label
+          ><label
+            >Next step<input
+              id="next-step"
+              maxlength="2000"
+              placeholder="What to check next" /></label
+          ><label
+            >Thesis<textarea
+              id="thesis"
+              maxlength="2000"
+              placeholder="Why this company is worth following"
+            ></textarea></label
+          ><label
+            >Risks / open questions<textarea
+              id="risks"
+              maxlength="2000"
+              placeholder="What could change your view"
+            ></textarea>
+          </label>
+        </div>
+        <div id="save-error" class="error" role="alert" hidden></div>
+        <button id="load-saved" type="button" hidden>Load saved version</button>
+        <div class="actions">
+          <button type="submit" class="primary" id="save">
+            Save to watchlist</button
+          ><span id="saved" class="muted" role="status"></span>
+        </div>
+      </form>
+    </dialog>
+    <script>
+      const token = "__SESSION_TOKEN__";
+      const $ = (s) => document.querySelector(s),
+        escapeText = (v) =>
+          String(v ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+      const watch = location.pathname === "/watchlist";
+      const pathUrl = (s) => s.split("/").map(encodeURIComponent).join("/");
+      const numeric = (v) => Number.isFinite(v);
+      const numberText = (v, d = 1) =>
+        numeric(v)
+          ? v.toLocaleString(undefined, { maximumFractionDigits: d })
+          : "—";
+      const percent = (v) => (numeric(v) ? (v * 100).toFixed(1) + "%" : "—");
+      const price = (v, currency = "USD") =>
+        numeric(v)
+          ? (currency === "USD" ? "$" : escapeText(currency) + " ") +
+            numberText(v, 2)
+          : "—";
+      const date = (value) =>
+        value
+          ? new Date(value).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "—";
+      const pretty = (s) =>
+        ({
+          PROVISIONAL_UNREVIEWED: "Provisional model",
+          SYSTEM_REVIEWED_DEVELOPMENT: "Development reviewed",
+          BLOCKED: "Stopped",
+          SOURCE_ONLY_SPECIALIST_METHOD_REQUIRED: "Sources only",
+          INCOMPLETE: "Incomplete",
+        })[s] || s;
+      let data = { rows: [], screen: null, screens: [], issues: [] },
+        saved = { entries: [], items: [], revision: 0, issues: [] },
+        filtered = [],
+        page = 0,
+        sortKey = watch ? "review_gap" : "score",
+        descending = !watch,
+        editRevision = 0,
+        loading = false,
+        currentJob = null,
+        pollTimer = null,
+        loadVersion = 0;
+      async function api(url, options) {
+        const r = await fetch(url, options);
+        const value = await r.json();
+        if (!r.ok) throw Error(value.error || r.statusText);
+        return value;
+      }
+      function showError(e) {
+        $("#error").hidden = false;
+        $("#error").textContent = e.message;
+      }
+      function getRows() {
+        return watch
+          ? saved.items.map((item) => ({
+              ...item.company,
+              ticker: item.entry.ticker,
+              name: item.company?.name || "No screening data",
+              metrics: item.company?.metrics || {},
+              item,
+            }))
+          : data.rows;
+      }
+      function field(row, key) {
+        if (key === "review_gap") return row.item?.review_gap;
+        if (key === "review_price") return row.item?.entry.review_price;
+        if (key === "stage") return row.item?.entry.stage;
+        if (key === "quote_time") return row.quote_time;
+        return row.metrics?.[key] ?? row[key];
+      }
+      const columns = watch
+        ? [
+            ["ticker", "Company"],
+            ["price", "Price"],
+            ["review_price", "Review price"],
+            ["review_gap", "vs review"],
+            ["stage", "Stage"],
+            ["pe", "P/E"],
+            ["vendor_fcf_yield", "FCF yield"],
+            ["quote_time", "Quote"],
+            ["research", "Research"],
+          ]
+        : [
+            ["ticker", "Company"],
+            ["sector", "Sector"],
+            ["price", "Price"],
+            ["pe", "P/E"],
+            ["vendor_fcf_yield", "FCF yield"],
+            ["ev_ebitda", "EV / EBITDA"],
+            ["net_debt_ebitda", "Net debt / EBITDA"],
+            ["score", "Screen"],
+            ["quote_time", "Quote"],
+            ["research", "Research"],
+          ];
+      function render() {
+        const q = $("#search").value.trim().toLowerCase(),
+          sector = $("#sector").value,
+          bucket = $("#bucket").value;
+        filtered = getRows().filter((row) => {
+          if (q && !`${row.ticker} ${row.name}`.toLowerCase().includes(q))
+            return false;
+          if (sector && row.sector !== sector) return false;
+          if ($("#fresh").checked && row.quote_status !== "Fresh") return false;
+          if (watch) {
+            if (bucket === "active" && row.item.entry.stage === "Archived")
+              return false;
+            if (
+              !["active", "all"].includes(bucket) &&
+              row.item.entry.stage !== bucket
+            )
+              return false;
+          } else if (
+            (bucket === "passed" && !row.basic_pass) ||
+            (bucket === "candidates" && !row.candidate_now) ||
+            (bucket === "shortlist" && !row.shortlisted)
+          )
+            return false;
+          for (const [id, key, min, scale] of [
+            ["max-pe", "pe", false, 1],
+            ["min-fcf", "vendor_fcf_yield", true, 100],
+            ["max-debt", "net_debt_ebitda", false, 1],
+          ]) {
+            if ($("#" + id).value === "") continue;
+            const value = row.metrics[key],
+              threshold = Number($("#" + id).value);
+            if (
+              !numeric(value) ||
+              (min ? value * scale < threshold : value * scale > threshold)
+            )
+              return false;
+          }
+          return true;
+        });
+        filtered.sort((a, b) => {
+          if (sortKey === "score") {
+            for (const key of ["shortlisted", "candidate_now", "basic_pass"]) {
+              const group = Number(Boolean(a[key])) - Number(Boolean(b[key]));
+              if (group) return descending ? -group : group;
+            }
+          }
+          const x = field(a, sortKey),
+            y = field(b, sortKey);
+          if (x == null && y == null) return a.ticker.localeCompare(b.ticker);
+          if (x == null) return 1;
+          if (y == null) return -1;
+          const d =
+            typeof x === "number" ? x - y : String(x).localeCompare(String(y));
+          return (descending ? -d : d) || a.ticker.localeCompare(b.ticker);
+        });
+        page = Math.max(0, Math.min(page, Math.ceil(filtered.length / 25) - 1));
+        $("#head").innerHTML =
+          "<tr>" +
+          columns
+            .map(
+              ([key, label]) =>
+                `<th scope="col" ${key === sortKey ? `aria-sort="${descending ? "descending" : "ascending"}"` : ""}>${key === "research" ? label : `<button type="button" data-sort="${key}">${label}${key === sortKey ? (descending ? " ↓" : " ↑") : ""}</button>`}</th>`,
+            )
+            .join("") +
+          "</tr>";
+        $("#rows").innerHTML =
+          filtered
+            .slice(page * 25, page * 25 + 25)
+            .map(
+              (row) =>
+                "<tr>" +
+                columns.map(([key]) => `<td>${cell(row, key)}</td>`).join("") +
+                "</tr>",
+            )
+            .join("") ||
+          `<tr><td colspan="${columns.length}" class="empty">${loading ? "Loading companies…" : watch && !saved.items.length ? "Your watchlist is empty. Open a company in Screener to save it, or add a ticker." : "No companies match these filters."}</td></tr>`;
+        $("#count").textContent = filtered.length
+          ? `${page * 25 + 1}–${Math.min(page * 25 + 25, filtered.length)} of ${filtered.length.toLocaleString()} companies`
+          : "0 companies";
+        $("#previous").disabled = page === 0;
+        $("#next").disabled = (page + 1) * 25 >= filtered.length;
+        $("#export").disabled = !filtered.length || loading;
+        document.querySelectorAll("[data-sort]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              descending =
+                sortKey === b.dataset.sort
+                  ? !descending
+                  : !["ticker", "sector", "stage", "quote_time"].includes(
+                      b.dataset.sort,
+                    );
+              sortKey = b.dataset.sort;
+              render();
+              document.querySelector(`[data-sort="${sortKey}"]`).focus();
+            }),
+        );
+        document
+          .querySelectorAll("[data-ticker]")
+          .forEach((b) => (b.onclick = () => openEditor(b.dataset.ticker)));
+      }
+      function cell(row, key) {
+        if (key === "ticker")
+          return `<button class="company" type="button" data-ticker="${escapeText(row.ticker)}">${escapeText(row.ticker)}</button><span class="company-name" title="${escapeText(row.name)}">${escapeText(row.name)}</span>${row.item?.entry.next_step ? `<span class="company-name" title="${escapeText(row.item.entry.next_step)}">${escapeText(row.item.entry.next_step)}</span>` : ""}`;
+        if (key === "sector") return escapeText(row.sector || "Unknown");
+        if (key === "price")
+          return `<span class="number">${price(row.metrics.price, row.currency || "Currency unknown")}</span>`;
+        if (key === "review_price")
+          return `<span class="number">${price(row.item.entry.review_price)}</span>`;
+        if (key === "review_gap")
+          return `<span class="number ${row.item.at_review_price ? "positive" : ""}">${percent(row.item.review_gap)}</span>${row.item.at_review_price ? '<span class="cell-note">Review price reached</span>' : ""}`;
+        if (key === "stage")
+          return `<span class="label">${escapeText(row.item.entry.stage)}</span>`;
+        if (key === "vendor_fcf_yield") return percent(row.metrics[key]);
+        if (key === "score")
+          return `<span class="label">${row.shortlisted ? "Shortlist" : row.candidate ? "Candidate" : row.basic_pass ? "Passed filters" : "Excluded"}</span><span class="cell-note">${row.signals?.length ?? 0} value signals${row.candidate && !row.candidate_now ? " · stale inputs" : ""}</span>`;
+        if (key === "quote_time")
+          return `<span class="number">${row.quote_time ? escapeText(new Date(row.quote_time * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })) : "—"}</span><span class="cell-note ${row.quote_status !== "Fresh" ? "danger" : ""}">${escapeText(row.quote_status === "Fresh" ? (row.quote_age_days < 1 ? Math.floor(row.quote_age_days * 24) + "h old" : Math.floor(row.quote_age_days) + "d old") : row.quote_status || "No data")}</span>`;
+        if (key === "research")
+          return row.research
+            ? `<a href="/#run=${encodeURIComponent(row.research.id)}">${escapeText(pretty(row.research.status))}</a>`
+            : "—";
+        return `<span class="number">${numberText(row.metrics[key])}</span>`;
+      }
+      function renderMeta() {
+        const all = getRows(),
+          old = $("#sector").value;
+        $("#sector").innerHTML =
+          '<option value="">All sectors</option>' +
+          [...new Set(all.map((x) => x.sector).filter(Boolean))]
+            .sort()
+            .map((x) => `<option>${escapeText(x)}</option>`)
+            .join("");
+        $("#sector").value = old;
+        if (watch) {
+          $("#scope").textContent =
+            `${saved.entries.filter((x) => x.stage !== "Archived").length}/30 companies · notes and review prices saved locally`;
+        } else if (data.screen) {
+          const c = data.screen.counts;
+          $("#scope").textContent =
+            `${c.universe.toLocaleString()} screened · ${c.basic_pass.toLocaleString()} passed filters · ${c.candidates} candidates · ${c.shortlist} shortlisted`;
+          $("#screen").innerHTML = data.screens
+            .map(
+              (x) =>
+                `<option value="${escapeText(x.id)}">${date(x.created_at)} · ${x.counts.universe.toLocaleString()} companies</option>`,
+            )
+            .join("");
+          $("#screen").value = data.screen.id;
+          $("#screen-links").innerHTML =
+            `<a href="/#run=${encodeURIComponent(data.screen.id)}">Audit this screen</a><a href="/files/${pathUrl(data.screen.id)}/report.json" target="_blank" rel="noopener">Source report</a><a href="/files/${pathUrl(data.screen.id)}/snapshot.json" target="_blank" rel="noopener">Frozen inputs</a><p class="muted">${escapeText(data.screen.scope)}. Saved ${date(data.screen.created_at)}. Minimum market cap $${numberText(data.screen.filters.min_cap / 1e9)}bn; price $${numberText(data.screen.filters.min_price)}; average volume ${numberText(data.screen.filters.min_volume, 0)}.</p>`;
+        } else {
+          $("#scope").textContent =
+            "No saved screens. Run the US universe screen to begin.";
+        }
+        const issues = watch ? saved.issues : data.issues;
+        $("#issues").hidden = !issues.length;
+        $("#issue-list").innerHTML = issues
+          .map((x) => `<li>${escapeText(x)}</li>`)
+          .join("");
+        render();
+      }
+      async function load(screenId) {
+        const request = ++loadVersion;
+        loading = true;
+        $("#reload").disabled = true;
+        $("#error").hidden = true;
+        $("#status").textContent = "Loading saved evidence…";
+        try {
+          const [d, w, r] = await Promise.all([
+            api(
+              "/api/screener" +
+                (screenId ? "?screen=" + encodeURIComponent(screenId) : ""),
+            ),
+            api("/api/watchlist"),
+            api("/api/runs"),
+          ]);
+          if (request !== loadVersion) return;
+          data = d;
+          saved = w;
+          const active = r.jobs.find((x) =>
+            ["RUNNING", "QUEUED"].includes(x.status),
+          );
+          currentJob = active?.id || null;
+          $("#run").disabled = Boolean(active);
+          $("#status").textContent = active ? "A research job is running." : "";
+          renderMeta();
+          if (active) pollJob(active.id);
+        } catch (e) {
+          if (request === loadVersion) throw e;
+        } finally {
+          if (request === loadVersion) {
+            loading = false;
+            $("#reload").disabled = false;
+            render();
+          }
+        }
+      }
+      function openEditor(ticker = "") {
+        const row =
+          getRows().find((x) => x.ticker === ticker) ||
+          data.rows.find((x) => x.ticker === ticker);
+        const entry = saved.entries.find((x) => x.ticker === ticker) || {
+          ticker,
+          stage: "Idea",
+          review_price: null,
+          thesis: "",
+          risks: "",
+          next_step: "",
+        };
+        editRevision = saved.revision;
+        $("#ticker").value = ticker;
+        $("#ticker").readOnly = Boolean(ticker);
+        $("#stage").value = entry.stage;
+        $("#review-price").value = entry.review_price ?? "";
+        $("#thesis").value = entry.thesis;
+        $("#risks").value = entry.risks;
+        $("#next-step").value = entry.next_step;
+        $("#saved").textContent = "";
+        $("#save-error").hidden = true;
+        $("#load-saved").hidden = true;
+        $("#company-title").textContent = ticker || "Add ticker";
+        $("#company-name").textContent = row?.name || "";
+        $("#save").textContent = saved.entries.some((x) => x.ticker === ticker)
+          ? "Save changes"
+          : "Save to watchlist";
+        $("#company-detail").innerHTML = row?.screen
+          ? `<dl class="metrics"><div><dt>Quote (${escapeText(row.currency)})</dt><dd>${price(row.metrics.price, row.currency || "Currency unknown")}</dd></div><div><dt>Quote time</dt><dd>${date(row.quote_time * 1000)} · ${escapeText(row.quote_status)}</dd></div><div><dt>Financial period</dt><dd>${escapeText(row.financial_period_end || "Not available")}</dd></div><div><dt>P/E</dt><dd>${numberText(row.metrics.pe)}</dd></div><div><dt>FCF yield</dt><dd>${percent(row.metrics.vendor_fcf_yield)}</dd></div><div><dt>EV / EBITDA</dt><dd>${numberText(row.metrics.ev_ebitda)}</dd></div></dl><p class="muted">${escapeText(row.method)}</p><div class="sources"><a href="/?screen=${encodeURIComponent(row.screen)}&ticker=${encodeURIComponent(row.ticker)}#deep-form">Prepare analysis</a>${row.research ? `<a href="/#run=${encodeURIComponent(row.research.id)}">Open latest research</a>` : ""}<a href="/#run=${encodeURIComponent(row.screen)}">Screen evidence</a></div><details><summary>Signals &amp; questions</summary><ul>${[...(row.signals || []), ...(row.flags || []), ...(row.questions || [])].map((x) => `<li>${escapeText(x)}</li>`).join("")}</ul><p class="muted">Screen saved ${date(row.screen_created_at)}; fundamentals observed ${date(row.fundamentals_observed_at)}.</p></details>`
+          : '<p class="muted">No verified screen for this ticker. Save it, then screen the watchlist to fetch free data.</p>';
+        if (!$("#editor").open) $("#editor").showModal();
+      }
+      $("#load-saved").onclick = async () => {
+        try {
+          saved = await api("/api/watchlist");
+          openEditor($("#ticker").value);
+        } catch (e) {
+          $("#save-error").textContent = e.message;
+        }
+      };
+      $("#save-form").onsubmit = async (event) => {
+        event.preventDefault();
+        $("#save").disabled = true;
+        $("#save-error").hidden = true;
+        const entry = {
+          ticker: $("#ticker").value,
+          stage: $("#stage").value,
+          review_price:
+            $("#review-price").value === ""
+              ? null
+              : Number($("#review-price").value),
+          thesis: $("#thesis").value,
+          risks: $("#risks").value,
+          next_step: $("#next-step").value,
+        };
+        try {
+          await api("/api/watchlist", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Workbench-Token": token,
+            },
+            body: JSON.stringify({ revision: editRevision, entry }),
+          });
+          saved = await api("/api/watchlist");
+          openEditor(entry.ticker.trim().toUpperCase());
+          $("#saved").textContent = "Saved";
+          $("#save").textContent = "Save changes";
+          $("#ticker").readOnly = true;
+          renderMeta();
+        } catch (e) {
+          $("#save-error").textContent = e.message;
+          $("#save-error").hidden = false;
+          $("#load-saved").hidden = !e.message.includes("another tab");
+        } finally {
+          $("#save").disabled = false;
+        }
+      };
+      async function runScreen() {
+        const tickers = watch
+          ? saved.entries
+              .filter((x) => x.stage !== "Archived")
+              .map((x) => x.ticker)
+              .join(",")
+          : "";
+        if (watch && !tickers) {
+          showError(Error("Add a company before screening the watchlist."));
+          return;
+        }
+        $("#run").disabled = true;
+        $("#error").hidden = true;
+        $("#status").textContent = "Starting free screen…";
+        try {
+          const job = await api("/api/jobs", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Workbench-Token": token,
+            },
+            body: JSON.stringify({ action: "screen", tickers }),
+          });
+          currentJob = job.id;
+          pollJob(job.id);
+        } catch (e) {
+          $("#run").disabled = false;
+          showError(e);
+          $("#status").textContent = "";
+        }
+      }
+      async function pollJob(id) {
+        clearTimeout(pollTimer);
+        if (id !== currentJob) return;
+        try {
+          const state = await api("/api/runs"),
+            job = state.jobs.find((x) => x.id === id);
+          if (!job)
+            throw Error(
+              "Job receipt unavailable. Open Research to inspect it.",
+            );
+          if (["RUNNING", "QUEUED"].includes(job.status)) {
+            $("#status").textContent =
+              `${job.action === "screen" ? "Screen" : "Analysis"} ${job.status.toLowerCase()} · results are saved even if you close this page`;
+            pollTimer = setTimeout(() => pollJob(id), 2500);
+            return;
+          }
+          currentJob = null;
+          $("#run").disabled = false;
+          if (job.status === "FAILED")
+            throw Error(
+              job.reason || "Run failed. Inspect its receipt in Research.",
+            );
+          if (job.action === "screen") {
+            await load(job.output);
+            $("#status").textContent = "Screen complete.";
+          } else {
+            await load(data.screen?.id);
+          }
+        } catch (e) {
+          currentJob = null;
+          $("#run").disabled = false;
+          showError(e);
+          $("#status").textContent = "";
+        }
+      }
+      function csvValue(value) {
+        if (value == null) return "";
+        let s = String(value);
+        if (typeof value !== "number" && /^[\s]*[=+@-]/.test(s)) s = "'" + s;
+        return '"' + s.replaceAll('"', '""') + '"';
+      }
+      function exportCsv() {
+        const headers = [
+          "Ticker",
+          "Company",
+          "Sector",
+          "Quote currency",
+          "Price",
+          "Quote time UTC",
+          "Quote status",
+          "Trailing PE",
+          "Vendor FCF yield",
+          "EV EBITDA",
+          "Net debt EBITDA",
+          "Screen",
+          "Financial period",
+          "Fundamentals observed UTC",
+          "Candidate at screen time",
+          "Candidate with fresh inputs",
+          "Value signals",
+          "Flags",
+          "Research stage",
+          "Review price USD",
+          "Price vs review",
+          "Thesis",
+          "Risks",
+          "Next step",
+        ];
+        const rows = filtered.map((r) => [
+          r.ticker,
+          r.name,
+          r.sector,
+          r.currency,
+          r.metrics.price,
+          r.quote_time ? new Date(r.quote_time * 1000).toISOString() : null,
+          r.quote_status,
+          r.metrics.pe,
+          r.metrics.vendor_fcf_yield,
+          r.metrics.ev_ebitda,
+          r.metrics.net_debt_ebitda,
+          r.screen,
+          r.financial_period_end,
+          r.fundamentals_observed_at,
+          r.candidate,
+          r.candidate_now,
+          r.signals?.join("; "),
+          r.flags?.join("; "),
+          r.item?.entry.stage,
+          r.item?.entry.review_price,
+          r.item?.review_gap,
+          r.item?.entry.thesis,
+          r.item?.entry.risks,
+          r.item?.entry.next_step,
+        ]);
+        const csv = [headers, ...rows]
+          .map((r) => r.map(csvValue).join(","))
+          .join("\r\n");
+        const url = URL.createObjectURL(
+          new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }),
+        );
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = watch ? "watchlist.csv" : "screener.csv";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      $("#title").textContent = watch ? "Watchlist" : "Screener";
+      document.title = "Smrik Fund · " + $("#title").textContent;
+      $(watch ? "#nav-watch" : "#nav-screen").setAttribute(
+        "aria-current",
+        "page",
+      );
+      $("#add").hidden = !watch;
+      $("#screen-label").hidden = watch;
+      $("#run").textContent = watch ? "Screen watchlist" : "Screen US universe";
+      $("#bucket").innerHTML = (
+        watch
+          ? [
+              ["active", "Active"],
+              ["Idea", "Ideas"],
+              ["Researching", "Researching"],
+              ["Waiting for price", "Waiting for price"],
+              ["Archived", "Archived"],
+              ["all", "All saved"],
+            ]
+          : [
+              ["all", "Screened universe"],
+              ["passed", "Passed filters"],
+              ["candidates", "Candidates · fresh"],
+              ["shortlist", "Saved shortlist"],
+            ]
+      )
+        .map(([v, l]) => `<option value="${v}">${l}</option>`)
+        .join("");
+      $("#filters").onsubmit = (e) => e.preventDefault();
+      $("#filters").oninput = () => {
+        page = 0;
+        render();
+      };
+      $("#previous").onclick = () => {
+        page--;
+        render();
+      };
+      $("#next").onclick = () => {
+        page++;
+        render();
+      };
+      $("#add").onclick = () => openEditor();
+      $("#close").onclick = () => $("#editor").close();
+      $("#run").onclick = runScreen;
+      $("#export").onclick = exportCsv;
+      $("#reload").onclick = () => load(data.screen?.id).catch(showError);
+      $("#screen").onchange = () => {
+        data.rows = [];
+        render();
+        load($("#screen").value).catch(showError);
+      };
+      load(new URLSearchParams(location.search).get("screen")).catch((e) => {
+        showError(e);
+        $("#status").textContent = "";
+      });
+    </script>
+  </body>
+</html>

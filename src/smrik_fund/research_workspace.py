@@ -15,7 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from smrik_fund.market_screen import symbol
 from smrik_fund.research_audit import (
@@ -25,6 +25,7 @@ from smrik_fund.research_audit import (
 	read_json,
 	within_data,
 )
+from smrik_fund.research_watchlist import save_entry, screener, watchlist
 
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = Path(__file__).with_name("workbench.html")
@@ -290,8 +291,11 @@ def make_server(data_root=DATA_ROOT, port=8787):
 						(ROOT / "tokens.css").read_bytes(),
 						"text/css; charset=utf-8",
 					)
-				if path == "/":
-					page = PAGE.read_text(encoding="utf-8").replace(
+				if path in {"/", "/screener", "/watchlist"}:
+					page_file = (
+						PAGE if path == "/" else PAGE.with_name("watchlist.html")
+					)
+					page = page_file.read_text(encoding="utf-8").replace(
 						"__SESSION_TOKEN__", token
 					)
 					return self.respond(
@@ -302,6 +306,13 @@ def make_server(data_root=DATA_ROOT, port=8787):
 							"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; connect-src 'self'"
 						},
 					)
+				if path == "/api/watchlist":
+					return self.respond(200, watchlist(data_root))
+				if path == "/api/screener":
+					screen_id = parse_qs(urlsplit(self.path).query).get(
+						"screen", [None]
+					)[0]
+					return self.respond(200, screener(screen_id, data_root))
 				if path == "/api/runs":
 					return self.respond(
 						200, {"runs": list_runs(data_root), "jobs": jobs(data_root)}
@@ -350,13 +361,15 @@ def make_server(data_root=DATA_ROOT, port=8787):
 				or self.headers.get("X-Workbench-Token") != token
 			):
 				return self.respond(403, {"error": "Local session token required"})
-			if self.path != "/api/jobs":
+			if self.path not in {"/api/jobs", "/api/watchlist"}:
 				return self.respond(404, {"error": "Unknown route"})
 			try:
 				length = int(self.headers.get("Content-Length", "0"))
 				if not 0 < length <= 20000:
 					raise ValueError("Request must be between 1 and 20000 bytes")
 				payload = json.loads(self.rfile.read(length))
+				if self.path == "/api/watchlist":
+					return self.respond(200, save_entry(payload, data_root))
 				with admission:
 					job = start_job(payload, data_root)
 				return self.respond(202, job)

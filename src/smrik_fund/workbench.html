@@ -182,6 +182,17 @@
         min-height: var(--control-height);
         font-size: var(--text-sm);
       }
+      .masthead nav {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: var(--space-lg);
+      }
+      @media (max-width: 40rem) {
+        .masthead {
+          flex-wrap: wrap;
+        }
+      }
       .masthead .brand {
         display: flex;
         align-items: baseline;
@@ -546,7 +557,10 @@
       <div class="brand">
         <h1>Smrik Fund</h1>
       </div>
-      <a href="#screen-form">New run</a>
+      <nav aria-label="Workspace">
+        <a href="/screener">Screener</a><a href="/watchlist">Watchlist</a
+        ><a href="#screen-form">New run</a>
+      </nav>
     </header>
     <main>
       <div id="error" class="error" role="alert"></div>
@@ -730,6 +744,14 @@
               `<option value="${escapeText(company.ticker)}">${escapeText(company.ticker + " · " + company.name)}</option>`,
           )
           .join("");
+        const requestedTicker = new URLSearchParams(location.search).get(
+          "ticker",
+        );
+        if (
+          requestedTicker &&
+          companies.some((c) => c.ticker === requestedTicker)
+        )
+          $("#ticker-choice").value = requestedTicker;
         companyNote();
         updateButtons();
       }
@@ -752,7 +774,9 @@
             ["RUNNING", "QUEUED"].includes(job.status),
           );
           renderRuns();
-          const oldScreen = $("#screen-choice").value;
+          const oldScreen =
+            $("#screen-choice").value ||
+            new URLSearchParams(location.search).get("screen");
           const screens = runs.filter((run) => run.kind === "screen");
           $("#screen-choice").innerHTML = screens
             .map(
@@ -784,19 +808,25 @@
             );
           updateButtons();
           if (!selectedRun) {
+            const requested = new URLSearchParams(location.search).get(
+              "ticker",
+            );
             const initial =
               new URLSearchParams(location.hash.slice(1)).get("run") ||
-              runs.find((run) =>
-                [
-                  "PROVISIONAL_UNREVIEWED",
-                  "SYSTEM_REVIEWED_DEVELOPMENT",
-                ].includes(run.status),
-              )?.id ||
-              runs[0]?.id;
+              (requested
+                ? runs.find(
+                    (run) => run.kind === "company" && run.ticker === requested,
+                  )?.id
+                : runs.find((run) =>
+                    [
+                      "PROVISIONAL_UNREVIEWED",
+                      "SYSTEM_REVIEWED_DEVELOPMENT",
+                    ].includes(run.status),
+                  )?.id || runs[0]?.id);
             if (initial) await inspect(initial, false);
             else
               $("#audit").innerHTML =
-                '<h2>Research</h2><p class="empty">No saved runs. Start a screen to begin.</p>';
+                `<h2>${escapeText(requested || "Research")}</h2><p class="empty">${requested ? "No saved analysis for this company. Use Run analysis to begin." : "No saved runs. Start a screen to begin."}</p>`;
           } else await inspect(selectedRun, false);
         } finally {
           loading = false;
