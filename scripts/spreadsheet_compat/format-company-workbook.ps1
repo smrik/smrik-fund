@@ -6,6 +6,12 @@ $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $excel.AutomationSecurity = 3
+function ModelRow([string]$sheet, [int]$row) {
+    if ($null -eq $snapshot.presentation.row_maps) { return $row }
+    $map=$snapshot.presentation.row_maps.PSObject.Properties[$sheet].Value
+    if ($null -ne $map -and $null -ne $map.PSObject.Properties[[string]$row]) { return [int]$map.PSObject.Properties[[string]$row].Value }
+    return $row
+}
 $book = $null
 try {
     $book = $excel.Workbooks.Open($targetWorkbook,0)
@@ -114,6 +120,7 @@ try {
             'WorkingCapital' { @(23,25) }
         }
         foreach ($r in $totals) {
+            $r=ModelRow $name $r
             $range=$sheet.Range($sheet.Cells.Item($r,1),$sheet.Cells.Item($r,$last))
             $range.Font.Bold=$true
             $range.Borders.Item(8).LineStyle=1
@@ -134,7 +141,7 @@ try {
         foreach ($driver in $snapshot.presentation.drivers.PSObject.Properties[$name].Value.PSObject.Properties) {
             $r=[int]$driver.Name
             $range=$sheet.Range($sheet.Cells.Item($r,2),$sheet.Cells.Item($r,$sheet.UsedRange.Columns.Count))
-            $range.NumberFormat=if ($name -eq 'Assets' -and $r -in @(16,24)) {'0.0'} else {'0.0%'}
+            $range.NumberFormat=if ($name -eq 'Assets' -and $r -in @((ModelRow $name 16),(ModelRow $name 24))) {'0.0'} else {'0.0%'}
             $range.Font.Italic=$true
         }
     }
@@ -147,6 +154,15 @@ try {
     $dcf.Rows.Item(25).Font.Bold=$true
     $dcf.Range($dcf.Cells.Item(25,1),$dcf.Cells.Item(25,$dcf.UsedRange.Columns.Count)).Interior.Color=15132390
     $dcf.Rows.Item(44).NumberFormat='0.00'
+    $templateChecked=0
+    foreach ($item in $snapshot.template_cells) {
+        $cell=$book.Worksheets.Item($item.sheet).Range($item.cell)
+        if ($item.number_format) { $cell.NumberFormat=[string]$item.number_format }
+        if ($item.value -is [decimal] -or $item.value -is [double] -or $item.value -is [long] -or $item.value -is [int]) {
+            if ($null -eq $cell.Value2 -or [Math]::Abs([double]$cell.Value2-[double]$item.value) -gt 0.000001) { throw "Template value mismatch: $($item.sheet)!$($item.cell)" }
+            $templateChecked++
+        }
+    }
     $formulaErrors=@()
     foreach ($sheet in $book.Worksheets) {
         try { $errors=$sheet.UsedRange.SpecialCells(-4123,16); foreach ($cell in $errors.Cells) { $formulaErrors += "$($sheet.Name)!$($cell.Address()): $($cell.Text)" } } catch { }
@@ -166,11 +182,11 @@ try {
         $costCell=$inputs.Cells.Item([int]$snapshot.input_rows.cogs_ratio,2)
         $priorCost=[double]$costCell.Value2
         $forecastColumn=[int]$snapshot.presentation.history_columns+3
-        $baseEbit=[double]$income.Cells.Item(38,$forecastColumn).Value2
-        $revenue=[double]$income.Cells.Item(8,$forecastColumn).Value2
+        $baseEbit=[double]$income.Cells.Item((ModelRow "Income" 38),$forecastColumn).Value2
+        $revenue=[double]$income.Cells.Item((ModelRow "Income" 8),$forecastColumn).Value2
         $costCell.Value2=$priorCost+0.01
         $excel.CalculateFullRebuild()
-        $newEbit=[double]$income.Cells.Item(38,$forecastColumn).Value2
+        $newEbit=[double]$income.Cells.Item((ModelRow "Income" 38),$forecastColumn).Value2
         if ([Math]::Abs($baseEbit-$newEbit-$revenue*0.01) -gt 0.000001 -or $dcf.Range('B20').Value2 -ne 'EDITED_UNREVIEWED' -or [double]$dcf.Range('B19').Value2 -ge $value) { throw 'Native expense driver propagation failed' }
         foreach ($item in $snapshot.historical_checks) {
             $actual=$book.Worksheets.Item($item.sheet).Range($item.cell).Value2
@@ -189,7 +205,7 @@ try {
     $excel.ActiveWindow.ScrollRow = 1
     $excel.ActiveWindow.ScrollColumn = 1
     $book.Save()
-    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; operating_values_checked=$operatingChecked; historical_values_checked=$historyChecked; formula_errors=$formulaErrors.Count; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; native_cost_edit=$nativeCostEdit; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
+    @{ status='PASS'; excel_version=$excel.Version; values_checked=$valuesChecked; operating_values_checked=$operatingChecked; template_values_checked=$templateChecked; historical_values_checked=$historyChecked; formula_errors=$formulaErrors.Count; maximum_difference=$maximum; per_share_value=$value; native_beta_edit='PASS'; native_cost_edit=$nativeCostEdit; hyperlinks=$review.Hyperlinks.Count } | ConvertTo-Json | Set-Content -LiteralPath $ProofPath -Encoding utf8
 } finally {
     if ($null -ne $book) { $book.Close($false) }
     $excel.Quit()

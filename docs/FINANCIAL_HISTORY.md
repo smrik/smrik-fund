@@ -134,3 +134,30 @@ and visually inspected.
 
 Cash-tax timing, fixed refinancing, aggregate working-capital balances and the
 existing declining-balance asset method are unchanged in this increment.
+
+
+## Editable Excel template (2026-09-19)
+
+[Open the template guide](../templates/README.md). The reusable workbook is
+`templates/company-model.xlsx`, paired with its original JSON contract. Excel row
+insertions and forecast formula edits now feed future UI/CLI runs. Source history
+and accounting/valuation checks stay generated. The default template has no
+financial overrides; the example company data is replaced on each run.
+
+Every run freezes the template/contract, records the changed cells, relocates
+statement references and validates the final formulas in the formula engine and
+native Excel. Source/audit edits, broken anchors, unavailable inputs and incompatible
+forecast horizons stop rather than silently reuse another company's data.
+
+Proof: two rows inserted in native Excel add an operating expense of 0.5% of
+forecast sales. BBWI's FY2027 EBIT falls by $34.901m and its provisional value moves
+from $41.4706 to $39.8646/share. The same file passed NVDA with shorter history;
+AAPL's additional revenue rows also pass the regression. This scenario is only in
+test copies, not the default template.
+
+18 focused template tests pass, including a simulated analyst/reviewer revision
+cycle. The broader initial history/model/workbench run had 43 other passes; its
+one new negative-test failure exposed an unhelpful subprocess exception, now
+replaced by a preserved blocked snapshot and a useful calculation error.
+No live LLM call was made during this increment. LLMs still select supported
+numeric controls; human-authored template edits change model formulas/structure.
