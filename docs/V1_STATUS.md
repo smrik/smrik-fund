@@ -2,6 +2,27 @@
 
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
+## Workbench editorial redesign — verified 2026-09-19
+
+- [x] Installed project-local `no-ai-slop` from petergyang/no-ai-slop and the
+  supplied `anti-slop-design` skill. The supplied main file is an exact copy;
+  its three referenced documents were not attached.
+- [x] Applied Hallmark's editorial direction: compact masthead, serif headings,
+  shared local CSS tokens, controls beside the selected result, expandable
+  evidence and run records. Removed the slogan, feature strip, statistic cards
+  and repeated explanatory subtitles. Financial calculations are unchanged.
+- [x] **52 tests PASS (11.82s)** across `test_research_workspace.py` and
+  `test_daily_research.py`; the HTTP test passed again after the final CSS-policy
+  change. Ruff, JavaScript syntax and Git whitespace checks passed.
+- [x] Browser: requested widths 320/375/414/768 and laptop 1280; no page overflow.
+  Checked keyboard disclosures/focus, run filtering, stopped-run limitations,
+  execution logs and invalid-JSON recovery. Text contrast >=6.09:1 on the tested
+  surfaces; focus contrast >=3:1. [Updated preview](images/workbench.png).
+- [x] Fresh free UI screen for META/HD/KO completed with 3 companies and 1/1 audit
+  checks passing: `data/workspace/runs/20260919T134944-17455ced`. No paid calls.
+  This verifies the redesigned screen controls; native Excel was not rerun for
+  this visual change. Prior Excel evidence remains below.
+
 ## Local workbench and broader coverage — verified 2026-09-19
 
 - [x] Working baseline merged to `main` through [PR #4](https://github.com/smrik/smrik-fund/pull/4),

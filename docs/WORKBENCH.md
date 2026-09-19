@@ -18,10 +18,10 @@ does not cancel a submitted job; reopening the page restores its receipt.
 If the port is occupied, use another `--port`. The server binds to loopback only.
 This is a local application, not an internet deployment or multiuser service.
 
-1. **Run free screen.** Enter up to 30 US-listed tickers, or leave blank for the
+1. **Run screen.** Enter up to 30 US-listed tickers, or leave blank for the
    supported US universe. Small watchlists may lack enough sector peers to
    produce a shortlist. Cached vendor observations retain their original dates.
-2. **Analyze a company.** Choose a saved screen and company. Its quote must be
+2. **Run analysis.** Choose a saved screen and company. Its quote must be
    USD and no more than seven days old. The workflow freezes SEC filings, tries
    the supported statement model, calculates a DCF and verifies native Excel.
 3. **Inspect.** Completion status and evidence integrity are separate. Read the
@@ -45,8 +45,8 @@ separate explicit action outside this interface.
 | Display | Meaning |
 | --- | --- |
 | Screen complete | Deterministic screening completed; cheap ratios are research signals. |
-| Provisional model | Supported model built; no independent paid analytical review was run. |
-| Specialist method needed | SEC evidence saved; a bank, insurer or REIT needs another method. |
+| Provisional | Supported model built; no independent paid analytical review was run. |
+| Specialist method | SEC evidence saved; a bank, insurer or REIT needs another method. |
 | Stopped | Read the recorded stage/reason. Partial evidence remains available. |
 | Evidence PASS | The listed bindings/checks passed; this does not approve assumptions. |
 | Evidence FAIL | An artifact changed, required evidence is missing, or a check failed. |
@@ -81,6 +81,23 @@ cases are not evidence of universal generic coverage. The current test adds
 real cases and explicit failure receipts; it does not establish a population
 coverage percentage. [Detailed coverage receipt](COVERAGE_20260919.md).
 
+## Interface
+
+The page uses a compact editorial layout: controls and run history beside the
+selected result, with assumptions, checks and source records in expandable
+sections. On phones the result comes first; **New run** jumps to the controls.
+Click a filing form (10-K or 10-Q) to open its SEC record. Its accession is also
+available on the link. **Run record** shows the path and any available job
+timestamps and execution log. Colors, typography and spacing are in the root `tokens.css`; no external
+fonts or frontend framework are required.
+
+Project-local skills: [no-ai-slop](../.agents/skills/no-ai-slop/SKILL.md), installed
+from [petergyang/no-ai-slop](https://github.com/petergyang/no-ai-slop), and
+[anti-slop-design](../.agents/skills/anti-slop-design/SKILL.md), copied verbatim
+from the supplied text. The latter's three linked reference files were not
+supplied; its main instructions are installed. Both are available to Codex on
+the next turn. The existing Hallmark skill guided the editorial treatment.
+
 ## Code walkthrough
 
 The existing financial calculations remain the same path for CLI and UI:
@@ -97,6 +114,7 @@ research_audit.py ← frozen artifacts from each stage
 
 | File | Responsibility / where to begin |
 | --- | --- |
+| `tokens.css` | Shared colors, font stacks and spacing. Served only at `/tokens.css`. |
 | `src/smrik_fund/workbench.html` | Page, forms and rendering. `refresh` lists runs; `inspect` shows evidence; `start` submits a free job. |
 | `src/smrik_fund/research_workspace.py` | Small standard-library HTTP server. `job_arguments` permits only two free commands. `start_job` saves a receipt and launches Python without a shell; `execute_job` records completion. |
 | `src/smrik_fund/daily_cli.py` | Thin Typer commands. `daily serve`, `daily audit` and `daily deep` expose the same functions to a terminal. |

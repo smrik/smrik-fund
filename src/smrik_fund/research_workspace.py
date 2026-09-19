@@ -284,6 +284,12 @@ def make_server(data_root=DATA_ROOT, port=8787):
 				return self.respond(403, {"error": "Local origin required"})
 			path = unquote(urlsplit(self.path).path)
 			try:
+				if path == "/tokens.css":
+					return self.respond(
+						200,
+						(ROOT / "tokens.css").read_bytes(),
+						"text/css; charset=utf-8",
+					)
 				if path == "/":
 					page = PAGE.read_text(encoding="utf-8").replace(
 						"__SESSION_TOKEN__", token
@@ -293,7 +299,7 @@ def make_server(data_root=DATA_ROOT, port=8787):
 						page.encode(),
 						"text/html; charset=utf-8",
 						{
-							"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; connect-src 'self'"
+							"Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; connect-src 'self'"
 						},
 					)
 				if path == "/api/runs":

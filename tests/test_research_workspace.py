@@ -151,7 +151,14 @@ def test_http_requires_local_origin_token_and_confined_paths(tmp_path, monkeypat
 	try:
 		with urlopen(base, timeout=5) as response:
 			page = response.read().decode()
+			assert (
+				"style-src 'self' 'unsafe-inline'"
+				in response.headers["Content-Security-Policy"]
+			)
 		token = re.search(r'const token\s*=\s*"([^"]+)"', page)[1]
+		with urlopen(base + "/tokens.css", timeout=5) as response:
+			assert response.headers.get_content_type() == "text/css"
+			assert b"--color-paper:" in response.read()
 		body = json.dumps({"action": "screen", "tickers": "META"}).encode()
 		for headers in (
 			{},
@@ -171,6 +178,8 @@ def test_http_requires_local_origin_token_and_confined_paths(tmp_path, monkeypat
 		) as response:
 			assert response.status == 202
 		for route in (
+			"/other.css",
+			"/tokens.css/../pyproject.toml",
 			"/files/../secret",
 			"/files/%2e%2e/secret",
 			"/files/.env",
