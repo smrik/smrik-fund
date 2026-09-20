@@ -30,6 +30,8 @@ tmp/
 Lunacy/runs/
 .out-of-code-insights/
 docs/annotations/
+# Local Windows junction; the canonical skill is tracked under .agents/skills.
+.claude/skills/hallmark/
 
 # One-off local development probes, retained on this computer
 scripts/p6_state_proof_r4.py
