@@ -97,8 +97,11 @@ def test_assessment_requires_explicit_live_opt_in(tmp_path):
 	assert not (tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize(
+	"tamper_path", ["research-packet.json", "diagnostics/baseline/snapshot.json"]
+)
 def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence(
-	tmp_path, monkeypatch
+	tmp_path, monkeypatch, tamper_path
 ):
 	from smrik_fund import company_run
 	from smrik_fund.analysis_budget import content_hash
@@ -123,6 +126,7 @@ def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence
 	company_run.save(tmp_path / "research-packet.json", packet)
 	company_run.save(tmp_path / "reviewed/model.json", model)
 	company_run.save(tmp_path / "reviewed/snapshot.json", {})
+	company_run.save(tmp_path / "diagnostics/baseline/snapshot.json", {"value": 10})
 	company_run.save(
 		tmp_path / "version.json",
 		{
@@ -145,6 +149,7 @@ def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence
 		"research-packet.json",
 		"ic.structured.json",
 		"ic.request.json",
+		"diagnostics/baseline/snapshot.json",
 	]
 	company_run.save(
 		tmp_path / "assessment-audit.json",
@@ -177,7 +182,15 @@ def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence
 		encoding="utf-8"
 	)
 	assert (tmp_path / "ic-review-audit.json").is_file()
-	(tmp_path / "research-packet.json").write_text("{}")
+	(tmp_path / tamper_path).write_text("{}")
+	with pytest.raises(ValueError, match="artifacts changed"):
+		research.review_ic(tmp_path, tmp_path / "unused-budget", tmp_path / "prices")
+
+
+def test_ic_review_rejects_artifact_paths_outside_run(tmp_path):
+	from smrik_fund.company_run import save
+
+	save(tmp_path / "assessment-audit.json", {"artifacts": {"../outside.json": "hash"}})
 	with pytest.raises(ValueError, match="artifacts changed"):
 		research.review_ic(tmp_path, tmp_path / "unused-budget", tmp_path / "prices")
 

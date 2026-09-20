@@ -73,7 +73,13 @@ def _prices(prices: dict, today: date) -> None:
 	_tokens(prices["max_input_tokens"], "input tier limit")
 
 
-def reservation(request: dict, prices: dict, *, today: date | None = None) -> dict:
+def reservation(
+	request: dict,
+	prices: dict,
+	*,
+	today: date | None = None,
+	token_count: dict | None = None,
+) -> dict:
 	"""UTF-8 byte count bounds text tokens; full JSON/schema plus wrapper allowance."""
 	_prices(prices, today or date.today())
 	if request.get("model") != prices["model"]:
@@ -88,6 +94,14 @@ def reservation(request: dict, prices: dict, *, today: date | None = None) -> di
 	if output == 0:
 		raise ValueError("A positive output cap is required")
 	input_bound = len(_encoded(request)) + prices["input_wrapper_allowance_tokens"]
+	if token_count is not None:
+		if token_count.get("request_hash") != content_hash(request):
+			raise ValueError("Provider token count belongs to a different request")
+		count = _tokens(token_count.get("input_tokens"), "provider input tokens")
+		if not count:
+			raise ValueError("Provider token count must be positive")
+		# Provider count includes the input/schema. Add the existing wrapper buffer.
+		input_bound = count + prices["input_wrapper_allowance_tokens"]
 	if input_bound > prices["max_input_tokens"]:
 		raise ValueError("Input bound exceeds the supported price/context tier")
 	input_rate = max(
@@ -196,6 +210,7 @@ def reserve_call(
 	final_review: bool = False,
 	prices: dict | None = None,
 	today: date | None = None,
+	token_count: dict | None = None,
 ) -> dict:
 	"""Persist before dispatch. One serial application owns this ledger."""
 	state = json.loads(path.read_text(encoding="utf-8"))
@@ -213,7 +228,9 @@ def reserve_call(
 		or endpoint_host != admitted_prices["endpoint_host"]
 	):
 		raise ValueError("Endpoint does not match the dated pricing configuration")
-	item = reservation(request, admitted_prices, today=today)
+	item = reservation(request, admitted_prices, today=today, token_count=token_count)
+	if token_count is not None:
+		item["provider_token_count"] = token_count
 	committed = sum(
 		call.get("cost", {}).get("priced_eur", call["reserved_eur"])
 		for call in state["calls"]
