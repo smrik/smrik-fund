@@ -175,7 +175,17 @@ for (const [key, value] of Object.entries(model.controls))
       ? "Expense / revenue assumption; default = reconciled TTM expense magnitude / revenue. Includes embedded D&A/SBC."
       : "AGENT-SELECTED DEVELOPMENT ASSUMPTION; not a sourced market observation",
   );
+// Forecast-only diagnostic stresses. Reported Inputs/History never change.
+const stressKeys = ["opex", "sbc", "capex", "nwc"];
+if (model.diagnostic_scenarios)
+  for (const key of stressKeys)
+    input(
+      `stress_${key}`,
+      0,
+      "Diagnostic forecast ratio delta; restored to zero before export",
+    );
 const I = (key) => `Inputs!$B$${indices[key]}`;
+const stress = (key) => (model.diagnostic_scenarios ? I(`stress_${key}`) : "0");
 const inputs = await table("Inputs", inputRows);
 await table(
   "SavedInputs",
@@ -233,7 +243,7 @@ for (const name of ["cost_of_sales", "research", "sga"])
   ); //9-11
 row(
   "Gross operating costs (includes embedded D&A and SBC)",
-  (c) => `SUM(${c}9:${c}11)`,
+  (c) => `SUM(${c}9:${c}11)+${c}8*(${stress("opex")}+${stress("sbc")})`,
 ); //12
 row(
   "Estimated embedded D&A removed",
@@ -249,7 +259,8 @@ row(
 row("Opening PP&E", (c, i) => (i === 0 ? I("ppe") : `${col(i - 1)}21`)); //18
 row(
   "Cash PP&E additions",
-  (c) => `${c}8*(-${I("ttm_capex_cash")})/${I("ttm_revenue")}`,
+  (c) =>
+    `${c}8*((-${I("ttm_capex_cash")})/${I("ttm_revenue")}+${stress("capex")})`,
 ); //19
 row(
   "PP&E depreciation: declining balance + half-period additions",
@@ -275,7 +286,8 @@ row("Closing total intangibles", (c) => `${c}22+${c}23-${c}24`); //25
 for (const key of ["receivables", "vendor_receivables"])
   row(
     displayNames[key] ?? key,
-    (c) => `${I(key)}*${c}8/${c}4/${I("ttm_revenue")}`,
+    (c) =>
+      `${I(key)}*${c}8/${c}4/${I("ttm_revenue")}${key === "receivables" ? `+${c}8/${c}4*${stress("nwc")}` : ""}`,
   ); //26-27
 row(
   "Inventory",
@@ -319,7 +331,7 @@ row(
 row("Net income", (c) => `${c}37-${c}38`); //39
 row(
   "SBC cash-flow addback / equity contribution",
-  (c) => `${c}8*${I("ttm_sbc")}/${I("ttm_revenue")}`,
+  (c) => `${c}8*(${I("ttm_sbc")}/${I("ttm_revenue")}+${stress("sbc")})`,
 ); //40
 row(
   "Cash shareholder distributions (dividend-equivalent policy)",
@@ -754,6 +766,50 @@ try {
       (missing.per_share_value === "" || missing.per_share_value === null),
     restored_identical: true,
   };
+  let diagnostics;
+  if (model.diagnostic_scenarios) {
+    diagnostics = [];
+    const allowed = new Set([
+      ...Object.keys(model.controls),
+      ...stressKeys.map((k) => `stress_${k}`),
+    ]);
+    const dcf = await wb.getSheet("DCF");
+    const checks = await wb.getSheet("Checks");
+    for (const scenario of model.diagnostic_scenarios) {
+      if (!Object.keys(scenario.inputs).length)
+        throw Error("Empty diagnostic stress");
+      for (const [key, value] of Object.entries(scenario.inputs)) {
+        if (!allowed.has(key) || !Number.isFinite(value))
+          throw Error("Invalid diagnostic input");
+        await inputs.setCell(`B${indices[key]}`, value);
+      }
+      await wb.calculate();
+      const mechanical = await checks.getValue("B9");
+      const valuation = await dcf.getValue("B8");
+      const value = await dcf.getValue("B19");
+      diagnostics.push({
+        id: scenario.id,
+        mechanical,
+        valuation_gate: valuation,
+        per_share_value:
+          mechanical === "PASS" &&
+          valuation === "PASS" &&
+          typeof value === "number" &&
+          Number.isFinite(value)
+            ? value
+            : null,
+      });
+      for (const key of Object.keys(scenario.inputs))
+        await inputs.setCell(
+          `B${indices[key]}`,
+          key.startsWith("stress_") ? 0 : model.controls[key],
+        );
+    }
+    await wb.calculate();
+    if (JSON.stringify(await snapshot()) !== JSON.stringify(base))
+      throw Error("Diagnostic restoration changed baseline");
+    proof.diagnostic_baseline_restored = true;
+  }
   if (costComponents.length) {
     const control = costComponents[0].control;
     await inputs.setCell(
@@ -801,7 +857,16 @@ try {
   await wb.save(out);
   await writeFile(
     process.argv[4],
-    JSON.stringify({ ...base, proof, input_rows: indices }, null, 2),
+    JSON.stringify(
+      {
+        ...base,
+        proof,
+        input_rows: indices,
+        ...(diagnostics ? { diagnostics } : {}),
+      },
+      null,
+      2,
+    ),
     { flag: "wx" },
   );
   process.stdout.write(

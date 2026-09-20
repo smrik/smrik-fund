@@ -1,5 +1,32 @@
 # V1 Status
 
+## Materiality-led research — verified 2026-09-20
+
+- Free historical ratios and same-engine DCF sensitivities precede paid research.
+  Sol receives full latest 10-K + 10-Q narratives and sets up to eight priorities;
+  isolated Luna investigations return cited findings. Sol reconciles them and
+  selects supported base/downside/upside assumptions. [Flow and commands](AUTOMATIC_ASSESSMENT.md).
+- Free diagnostics passed BBWI (five annual periods, 15 drivers), NVDA (three,
+  16) and LULU (three, 14). Every stress restored the baseline; reported history
+  is preserved. Unsupported mechanisms remain explicit gaps.
+- Live BBWI: `data/workspace/runs/20260920-bbwi-materiality-r2/`. Eight separate
+  questions, four bounded follow-up searches, Sol synthesis/model review/IC review.
+  Conditional values: downside $13.4053, base $36.0753, upside $77.6963/share.
+  Final priority: investigate; the IC explicitly says not investment-ready.
+- Native Excel checked 572 forecast, 90 operating and 176 historical values;
+  zero formula errors. All 119 final artifact/source checks passed. Read
+  `IC-reviewed.md`, `ASSESSMENT.md` and `reviewed/BBWI.xlsx`.
+- Final focused suite: 49 passed plus nine subtests. Earlier template regressions
+  passed; broader suite: 103 passed plus nine subtests. Four existing daily-IC
+  tests failed at the UTC/local midnight boundary; unchanged HEAD reproduces the
+  failure and all four pass with an aligned test clock. No unrelated date fix.
+- R1 exposed unbound investigator range IDs; the contract now binds parent drivers
+  and separately labels metrics, units and periods. R2's final IC audit exposed an
+  old flat-file restriction; contained subfolders now pass verified hashes, with
+  tamper/escape tests. Resumed only the final IC review; financial outputs unchanged.
+- This goal used EUR 5.493652 of its new EUR 20 allowance across 19 calls, including
+  the failed attempt. Earlier costs and unknown reservations remain in the ledger.
+
 The pre-merge remote status is preserved verbatim in [the August 30 archive](history/20260830-main-status.md). Later verified work below supersedes that snapshot.
 
 ## Automatic BBWI assessment — verified 2026-09-20

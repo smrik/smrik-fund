@@ -70,6 +70,26 @@ class AnalysisBudgetTests(unittest.TestCase):
 		self.assertAlmostEqual(cost["priced_eur"], 0.000299 / 1.1622)
 		self.assertTrue(cost["cache_subdivision_known"])
 
+	def test_provider_token_count_is_bound_and_reserves_full_output(self):
+		count = {"request_hash": content_hash(self.request), "input_tokens": 1500}
+		result = reservation(
+			self.request, self.prices, today=self.today, token_count=count
+		)
+		self.assertEqual(
+			result["input_token_upper_bound"],
+			1500 + self.prices["input_wrapper_allowance_tokens"],
+		)
+		self.assertEqual(result["output_token_cap"], 2000)
+		for invalid in (
+			{**count, "request_hash": "wrong"},
+			{**count, "input_tokens": -1},
+			{**count, "input_tokens": 9999999},
+		):
+			with self.assertRaises(ValueError):
+				reservation(
+					self.request, self.prices, today=self.today, token_count=invalid
+				)
+
 	def test_model_specific_prices_preserve_legacy_holds_and_shared_budget(self):
 		self.initialize()
 		self.reserve("legacy")
@@ -87,10 +107,14 @@ class AnalysisBudgetTests(unittest.TestCase):
 			"output_usd_per_million": 20.0,
 		}
 		reserve_call(
-			self.path, call_id="sol", task_id="whole-model-review",
+			self.path,
+			call_id="sol",
+			task_id="whole-model-review",
 			request={**self.request, "model": "gpt-5.6-sol"},
-			endpoint_host="api.openai.com", final_review=True,
-			prices=sol_prices, today=self.today,
+			endpoint_host="api.openai.com",
+			final_review=True,
+			prices=sol_prices,
+			today=self.today,
 		)
 		state = json.loads(self.path.read_text())
 		self.assertEqual(state["prices"], self.prices)
@@ -102,8 +126,11 @@ class AnalysisBudgetTests(unittest.TestCase):
 			("sol", "gpt-5.6-sol", 0.00558),
 		]:
 			settled = record_outcome(
-				self.path, call_id=call_id, usage=self.usage,
-				elapsed_seconds=1, returned_model=model,
+				self.path,
+				call_id=call_id,
+				usage=self.usage,
+				elapsed_seconds=1,
+				returned_model=model,
 			)
 			self.assertAlmostEqual(settled["cost"]["priced_usd"], expected_usd)
 
@@ -114,8 +141,11 @@ class AnalysisBudgetTests(unittest.TestCase):
 		state["prices"]["output_usd_per_million"] *= 10
 		self.path.write_text(json.dumps(state))
 		settled = record_outcome(
-			self.path, call_id="one", usage=self.usage,
-			elapsed_seconds=1, returned_model="gpt-5.6-luna",
+			self.path,
+			call_id="one",
+			usage=self.usage,
+			elapsed_seconds=1,
+			returned_model="gpt-5.6-luna",
 		)
 		self.assertAlmostEqual(settled["cost"]["priced_usd"], 0.000299)
 
@@ -231,8 +261,10 @@ class AnalysisBudgetTests(unittest.TestCase):
 				reservation({**self.request, **changes}, self.prices, today=self.today)
 		with self.assertRaisesRegex(ValueError, "not current"):
 			reservation(
-				self.request, self.prices,
-				today=date.fromisoformat(self.prices["valid_through"]) + timedelta(days=1),
+				self.request,
+				self.prices,
+				today=date.fromisoformat(self.prices["valid_through"])
+				+ timedelta(days=1),
 			)
 
 	def test_overrun_locks_further_admission(self):

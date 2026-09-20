@@ -787,7 +787,12 @@ export async function buildStatements({ wb, table, model, rows, I }) {
         26,
         "Total costs before D&A replacement",
         j,
-        F(components.map((x) => `${c}${costRows[x.key]}`).join("+")),
+        F(
+          components.map((x) => `${c}${costRows[x.key]}`).join("+") +
+            (model.diagnostic_scenarios
+              ? `+${c}8*(${I("stress_opex")}+${I("stress_sbc")})`
+              : ""),
+        ),
       );
       put("Income", 27, "Total costs / revenue", j, F(`${c}26/${c}8`));
     } else if (aggregate) {
@@ -805,7 +810,18 @@ export async function buildStatements({ wb, table, model, rows, I }) {
         j,
         F(`${I("ttm_cost_of_sales")}/${I("ttm_revenue")}`),
       );
-      put("Income", 26, "Total costs before D&A replacement", j, F(`${c}23`));
+      put(
+        "Income",
+        26,
+        "Total costs before D&A replacement",
+        j,
+        F(
+          `${c}23` +
+            (model.diagnostic_scenarios
+              ? `+${c}8*(${I("stress_opex")}+${I("stress_sbc")})`
+              : ""),
+        ),
+      );
     }
     put("Income", 38, "EBIT", j, F(`${c}32-${c}35-${c}36`));
   }
