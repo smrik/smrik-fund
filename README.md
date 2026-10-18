@@ -2,7 +2,9 @@
 
 Personal financial-research tool: free US screening → explained shortlist →
 frozen SEC filings → provisional three-statement DCF → formatted, editable Excel.
-Paid LLM analysis is separate and explicit. No trading connection.
+Live LLM analysis is separate and explicit. Company research defaults to your
+ChatGPT-backed Codex CLI; the billed API requires explicit selection and never
+acts as a fallback. No trading connection.
 
 ## Set up
 
@@ -56,6 +58,7 @@ Bank/insurer/REIT cases require dedicated methods. Successful accounting checks
 do not establish an investment thesis or universal coverage.
 
 See [daily commands and methodology](docs/DAILY_RESEARCH.md),
+[Codex-backed company research](docs/AUTOMATIC_ASSESSMENT.md),
 [verified status](docs/V1_STATUS.md), and
 [architecture and acceptance criteria](docs/AI_FUND_BUILD_GUIDE.md).
 Generated filings, workbooks and model responses remain local under `data/`.

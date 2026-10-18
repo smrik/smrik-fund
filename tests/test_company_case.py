@@ -69,3 +69,43 @@ def test_manifest_cannot_hide_required_evidence_or_change_measurement(tmp_path, 
 	(out / "case.json").write_text(json.dumps(manifest))
 	with pytest.raises(ValueError):
 		validate_case(out)
+
+
+def test_missing_index_uses_sec_primary_document_and_preserves_source(tmp_path, monkeypatch):
+	source = filing()
+	source.homepage = SimpleNamespace(primary_html_document=None)
+	source.primary_document = "aapl-20250927.htm"
+
+	def unavailable():
+		raise AttributeError("Missing index attachment")
+
+	source.text = unavailable
+	urls = []
+
+	def download(url):
+		urls.append(url)
+		return "<html><body><p>Original primary filing evidence</p></body></html>"
+
+	monkeypatch.setattr("edgar.httprequests.download_text", download)
+	out = tmp_path / "case"
+	manifest = freeze_filings("AAPL", "2025-10-31", [source], out)
+	assert validate_case(out) == manifest
+	folder = out / source.accession_no
+	assert "Original primary filing evidence" in (folder / "source.txt").read_text()
+	assert urls == ["https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm"]
+	assert json.loads((folder / "filing.json").read_text())["text_source_url"] == urls[0]
+
+
+@pytest.mark.parametrize("primary", ["../wrong.htm", "https://example.com/wrong.htm"])
+def test_primary_document_fallback_rejects_paths(tmp_path, primary):
+	source = filing()
+	source.homepage = SimpleNamespace(primary_html_document=None)
+	source.primary_document = primary
+
+	def unavailable():
+		raise AttributeError("Missing index attachment")
+
+	source.text = unavailable
+	with pytest.raises(ValueError, match="primary HTML"):
+		freeze_filings("AAPL", "2025-10-31", [source], tmp_path / "case")
+	assert not (tmp_path / "case").exists()

@@ -1,5 +1,19 @@
 # V1 Status
 
+## Codex subscription research — verified 2026-10-17
+
+- Company research defaults to saved ChatGPT-backed Codex CLI. Every research and
+  review stage receives that transport; no automatic paid API fallback. Existing
+  accounting, citation, scenario, independent-review and Excel gates retained.
+- Live BBWI analyst/reviewer cycle passed; native Excel checked 572 forecast,
+  90 operating and 176 historical values with zero formula errors. Integrity
+  audit: 10/10 passed. Development validation, not financial approval.
+- 49 focused tests passed across checks; Ruff passed. Full research/IC routing
+  tested with simulated responses; live CLI checked analyst/reviewer + workbook.
+- Evidence: `data/codex-cli-validation/20261017-bbwi-live-r2/`.
+  [Implementation/limits](CODEX_CLI_RESEARCH_PROPOSAL.md),
+  [run commands](AUTOMATIC_ASSESSMENT.md).
+
 ## Materiality-led research — verified 2026-09-20
 
 - Free historical ratios and same-engine DCF sensitivities precede paid research.

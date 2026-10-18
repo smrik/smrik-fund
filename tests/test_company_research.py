@@ -100,8 +100,9 @@ def test_assessment_requires_explicit_live_opt_in(tmp_path):
 @pytest.mark.parametrize(
 	"tamper_path", ["research-packet.json", "diagnostics/baseline/snapshot.json"]
 )
+@pytest.mark.parametrize("transport", ["api", "codex"])
 def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence(
-	tmp_path, monkeypatch, tamper_path
+	tmp_path, monkeypatch, tamper_path, transport
 ):
 	from smrik_fund import company_run
 	from smrik_fund.analysis_budget import content_hash
@@ -140,6 +141,7 @@ def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence
 	company_run.save(
 		tmp_path / "ic.request.json",
 		{
+			**({"transport": "codex"} if transport == "codex" else {}),
 			"input": "{}",
 			"text": {"format": {"schema": ICAssessment.model_json_schema()}},
 		},
@@ -166,6 +168,9 @@ def test_independent_ic_revision_preserves_original_and_rejects_changed_evidence
 
 	def simulated_call(output, name, payload, **kwargs):
 		assert name == "ic-review" and payload["draft_ic"] == draft
+		assert kwargs["transport"] == transport
+		if transport == "codex":
+			assert kwargs["prices"] is None
 		result = {
 			**draft,
 			"headline": "Corrected by simulated independent reviewer",

@@ -459,7 +459,7 @@ def write_decision_report(output, model, snapshot, packet):
 	(output / "ASSESSMENT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def finish_assessment(output, model, snapshot, packet, budget_path, price_dir):
+def finish_assessment(output, model, snapshot, packet, budget_path, price_dir, *, transport="api"):
 	from smrik_fund.company_run import call_model, fingerprint, read, save
 	from smrik_fund.daily_ic import ICAssessment
 
@@ -501,7 +501,8 @@ def finish_assessment(output, model, snapshot, packet, budget_path, price_dir):
 		},
 		review=False,
 		budget_path=budget_path,
-		prices=read(price_dir / "sol-price-snapshot.json"),
+		transport=transport,
+		prices=read(price_dir / "sol-price-snapshot.json") if transport == "api" else None,
 		reasoning_effort="high",
 		response_schema=ic_schema,
 		validator=validate,
@@ -520,6 +521,13 @@ def finish_assessment(output, model, snapshot, packet, budget_path, price_dir):
 		"*.response.json",
 		"*.receipt.json",
 		"*.tokens.json",
+		"*.cli.json",
+		"*.schema.json",
+		"*.started.json",
+		"*.events.jsonl",
+		"*.stderr.log",
+		"*.prompt.txt",
+		"*.last-message.json",
 		"question-*.evidence.json",
 		"question-*.result.json",
 	):
@@ -539,7 +547,7 @@ def finish_assessment(output, model, snapshot, packet, budget_path, price_dir):
 			"note": "Hashes verify artifact binding, not financial completeness. Read coverage limitations and independent review.",
 		},
 	)
-	review_ic(output, budget_path, price_dir)
+	review_ic(output, budget_path, price_dir, transport=transport)
 
 
 def render_ic(path, result, ticker, metrics, packet):
@@ -570,7 +578,7 @@ def render_ic(path, result, ticker, metrics, packet):
 	path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def review_ic(output, budget_path, price_dir):
+def review_ic(output, budget_path, price_dir, *, transport=None):
 	"""Append a source-bound independent editorial review; retain the original brief."""
 	from smrik_fund.company_run import call_model, fingerprint, read, save
 	from smrik_fund.daily_ic import ICAssessment
@@ -597,6 +605,9 @@ def review_ic(output, budget_path, price_dir):
 	if content_hash(packet) != model["research_packet_hash"]:
 		raise ValueError("IC evidence differs from the model review")
 	original_request = read(output / "ic.request.json")
+	transport = transport or original_request.get("transport", "api")
+	if transport != original_request.get("transport", "api"):
+		raise ValueError("IC review transport differs from the original run")
 	payload = json.loads(original_request["input"])
 	payload["draft_ic"] = read(output / "ic.structured.json")
 	payload["task"] = (
@@ -626,7 +637,8 @@ def review_ic(output, budget_path, price_dir):
 		payload,
 		review=True,
 		budget_path=budget_path,
-		prices=read(price_dir / "sol-price-snapshot.json"),
+		transport=transport,
+		prices=read(price_dir / "sol-price-snapshot.json") if transport == "api" else None,
 		response_schema=contract,
 		validator=validate,
 	)
@@ -638,7 +650,7 @@ def review_ic(output, budget_path, price_dir):
 		output / "IC-reviewed.md", result, model["case"], audit["metrics"], packet
 	)
 	artifacts = ["assessment-audit.json", "IC-reviewed.md"] + [
-		p.name for p in output.glob("ic-review.*.json")
+		p.name for p in output.glob("ic-review.*") if p.is_file()
 	]
 	save(
 		output / "ic-review-audit.json",

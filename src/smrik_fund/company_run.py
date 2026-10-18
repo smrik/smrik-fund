@@ -102,10 +102,13 @@ def call_model(
 	response_schema=None,
 	validator=None,
 	reasoning_effort=None,
+	transport="api",
 ):
 	"""No hidden retries; save raw response and settle usage before semantic gates."""
+	if transport not in {"codex", "api"}:
+		raise ValueError("Unknown research transport")
 	request = {
-		"model": prices["model"],
+		"model": prices["model"] if transport == "api" else "codex-default",
 		"service_tier": "default",
 		"reasoning": {"effort": reasoning_effort or ("high" if review else "medium")},
 		"max_output_tokens": 12000 if review or response_schema else 4000,
@@ -122,6 +125,9 @@ def call_model(
 			}
 		},
 	}
+	if transport == "codex":
+		request = {k: request[k] for k in ("model", "reasoning", "input", "text")}
+		request["transport"] = "codex"
 	request_path = output_dir / f"{name}.request.json"
 	response_path = output_dir / f"{name}.response.json"
 	receipt_path = output_dir / f"{name}.receipt.json"
@@ -132,7 +138,11 @@ def call_model(
 			{"output": str(output_dir.resolve()), "name": name, "request": request}
 		)[:24]
 	)
-	if response_path.exists():
+	if transport == "codex":
+		from smrik_fund.codex_transport import dispatch_codex
+
+		raw = dispatch_codex(request, output_dir, name, call_id)
+	elif response_path.exists():
 		if read(receipt_path) != {
 			"request_hash": content_hash(request),
 			"response_sha256": fingerprint(response_path),
@@ -214,17 +224,18 @@ def call_model(
 				output_dir / f"{name}.elapsed.json",
 				{"seconds": time.monotonic() - started},
 			)
-	state = read(budget_path)
-	call = next(item for item in state["calls"] if item["call_id"] == call_id)
-	if call["status"] != "completed":
-		record_outcome(
-			budget_path,
-			call_id=call_id,
-			usage=raw.get("usage"),
-			elapsed_seconds=read(output_dir / f"{name}.elapsed.json")["seconds"],
-			response_id=raw.get("id"),
-			returned_model=raw.get("model"),
-		)
+	if transport == "api":
+		state = read(budget_path)
+		call = next(item for item in state["calls"] if item["call_id"] == call_id)
+		if call["status"] != "completed":
+			record_outcome(
+				budget_path,
+				call_id=call_id,
+				usage=raw.get("usage"),
+				elapsed_seconds=read(output_dir / f"{name}.elapsed.json")["seconds"],
+				response_id=raw.get("id"),
+				returned_model=raw.get("model"),
+			)
 	result = _structured_response(raw)
 	if response_schema is None:
 		validate_controls(result["controls"])
@@ -275,6 +286,10 @@ def completed_analyst(run_dir, case_hash):
 		"response_sha256"
 	] != fingerprint(run_dir / "analyst.response.json"):
 		raise ValueError("Saved analyst response/request binding changed")
+	if request.get("transport") == "codex":
+		from smrik_fund.codex_transport import dispatch_codex
+
+		dispatch_codex(request, run_dir, "analyst", receipt["call_id"])
 	if json.loads(request["input"])["model"]["case_hash"] != case_hash:
 		raise ValueError("Saved analyst uses a different source case")
 	analyst = _structured_response(read(run_dir / "analyst.response.json"))
@@ -298,11 +313,14 @@ def run_case(
 	progress=None,
 	template=None,
 	assess=False,
+	transport="codex",
 ):
 	def stage(name, status, detail):
 		if progress is not None:
 			progress(name, status, detail)
 
+	if transport not in {"codex", "api"}:
+		raise ValueError("Unknown research transport")
 	if assess and (not live or prior or resume_from or assumptions):
 		raise ValueError("Full assessment requires a fresh --live run")
 
@@ -351,6 +369,7 @@ def run_case(
 			ROOT / "scripts/spreadsheet_compat/company-statements.mjs",
 			FORMATTER,
 			Path(__file__),
+			ROOT / "src/smrik_fund/codex_transport.py",
 			ROOT / "src/smrik_fund/company_model.py",
 			ROOT / "src/smrik_fund/company_case.py",
 			ROOT / "src/smrik_fund/portable_model.py",
@@ -371,6 +390,7 @@ def run_case(
 			"code": code,
 			"live": live,
 			"assessment": assess,
+			"transport": transport if live else None,
 			"template_sha256": patch["sha256"] if patch else None,
 			"template_contract_sha256": patch["contract_sha256"] if patch else None,
 			"beta_revision": beta,
@@ -443,6 +463,7 @@ def run_case(
 			budget_path,
 			price_dir,
 			progress=progress,
+			transport=transport,
 		)
 		save(output_dir / "research-packet.json", packet)
 		model["research_packet_hash"] = content_hash(packet)
@@ -533,10 +554,11 @@ def run_case(
 			},
 			review=False,
 			budget_path=budget_path,
+			transport=transport,
 			prices=read(
 				price_dir
 				/ ("sol-price-snapshot.json" if assess else "luna-price-snapshot.json")
-			),
+			) if transport == "api" else None,
 			reasoning_effort="high" if assess else None,
 			**(
 				{
@@ -617,7 +639,8 @@ def run_case(
 				},
 				review=True,
 				budget_path=budget_path,
-				prices=read(price_dir / "sol-price-snapshot.json"),
+				transport=transport,
+				prices=read(price_dir / "sol-price-snapshot.json") if transport == "api" else None,
 				**(
 					{
 						"response_schema": decision_schema(
@@ -723,7 +746,7 @@ def run_case(
 		stage(
 			"ic", "RUNNING", "Synthesize the model, research findings and limitations"
 		)
-		finish_assessment(output_dir, model, final, packet, budget_path, price_dir)
+		finish_assessment(output_dir, model, final, packet, budget_path, price_dir, transport=transport)
 		stage("ic", "PASS", "Agent-written IC brief and bound assessment audit saved")
 	stage(
 		"publication",
@@ -742,8 +765,9 @@ def main():
 	parser.add_argument(
 		"--live",
 		action="store_true",
-		help="Run bounded paid analyst and independent review",
+		help="Run bounded analyst and independent review using the selected transport",
 	)
+	parser.add_argument("--transport", choices=("codex", "api"), default="codex", help="Codex uses saved ChatGPT login; API requires separate budget/pricing authorization. No fallback.")
 	parser.add_argument("--prior", type=Path)
 	parser.add_argument("--beta", type=float)
 	parser.add_argument("--price-dir", type=Path)
@@ -771,6 +795,7 @@ def main():
 				price_dir=args.price_dir,
 				resume_from=args.resume_from,
 				assess=args.assess,
+				transport=args.transport,
 			),
 			indent=2,
 		)

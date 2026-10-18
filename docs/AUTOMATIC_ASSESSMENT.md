@@ -1,5 +1,51 @@
 # Automatic company assessment
 
+## Codex subscription transport — 17 October 2026
+
+Live company research now defaults to **Codex CLI with your saved ChatGPT login**.
+Use `--transport codex` explicitly in scripts. No API pricing file or euro budget
+is loaded on that path. The original accounting, citation, control-bound,
+scenario, independent-review and native Excel gates still run.
+
+```powershell
+.venv/Scripts/python.exe -m smrik_fund.company_run BBWI `
+  --case-dir data/valuation-prep/20261017/BBWI/run/source --as-of 2026-10-17 `
+  --output-dir data/workspace/runs/bbwi-codex-assessment `
+  --live --assess --transport codex
+```
+
+Windows requires `codex.exe` on PATH; other platforms use `codex`. First run
+`codex login`, choosing ChatGPT. The pipeline verifies login status through the
+CLI; it never reads/copies authentication files. Each stage runs in a separate
+temporary directory with a read-only sandbox, user provider/MCP configuration
+ignored, tools disabled, and API-key environment overrides removed. The CLI's
+default model is used; Sol/Luna in legacy task text denote research roles, not
+guaranteed subscription model identities. Available usage/model metadata is
+recorded without inventing a model when the CLI does not report it.
+
+`--live` still explicitly enables model execution; ordinary screens, diagnostics
+and free models remain non-LLM paths. Subscription usage limits apply. A CLI
+stage has a ten-minute process timeout. Missing CLI/login, quota exhaustion,
+timeouts, unexpected tool activity, malformed responses or rejected financial
+decisions stop the run. **There is no automatic API fallback or redispatch of
+an incomplete attempt.** Keep the stopped folder, resolve the cause and choose
+a new output directory for a deliberate rerun. Completed stages can replay
+their hash-bound responses without invoking Codex again.
+
+Each stage preserves `.request.json`, `.schema.json`, `.prompt.txt`,
+`.events.jsonl`, `.stderr.log`, `.last-message.json`, `.cli.json`,
+`.response.json`, `.receipt.json` and validated `.structured.json`.
+Failure records are explicit. Requests bind the supplied source hashes;
+receipts additionally bind the CLI artifacts. Analyst and reviewer contexts stay
+separate. The API euro ledger is neither reset nor consumed by CLI execution.
+
+The separately billed API path requires explicit `--transport api`, current
+`--price-dir` data and its existing authorized budget. Never use it as recovery
+from subscription quota or CLI failure without separate authorization.
+
+The older API examples below document that path; add `--transport api` to use
+them. [Implementation and verification](CODEX_CLI_RESEARCH_PROPOSAL.md).
+
 `company_run --live --assess` runs free financial diagnostics, Sol research
 planning, isolated Luna investigations, Sol synthesis, calculated statements,
 independent review and an IC summary. The application agents
@@ -10,7 +56,7 @@ methods; the operator does not supply company-specific corrections.
 .venv/Scripts/python.exe -m smrik_fund.company_run BBWI `
   --case-dir data/history/20260919/BBWI/source --as-of 2026-09-16 `
   --output-dir data/workspace/runs/my-new-assessment `
-  --price-dir data/pricing/2026-09-20 --live --assess
+  --price-dir data/pricing/2026-09-20 --live --assess --transport api
 ```
 
 Use a new output folder, a current verified price snapshot, and an existing budget

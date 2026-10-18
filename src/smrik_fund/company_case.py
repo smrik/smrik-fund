@@ -85,7 +85,23 @@ def freeze_filings(ticker: str, cutoff: str, filings: list, output_dir: Path, *,
 			"source_url": filing.homepage_url,
 			"entity": entity, "reporting_periods": xbrl.reporting_periods,
 		}
-		text = filing.text()
+		try:
+			text = filing.text()
+		except AttributeError:
+			if filing.homepage.primary_html_document is not None:
+				raise
+			# SEC may block its index while the submissions-listed document works.
+			primary = getattr(filing, "primary_document", "")
+			if not re.fullmatch(r"[A-Za-z0-9_.-]+\.html?", primary):
+				raise ValueError("Valid SEC primary HTML document required") from None
+			from edgar.documents import HTMLParser, ParserConfig
+			from edgar.httprequests import download_text
+			from edgar.richtools import rich_to_text
+
+			url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{accession.replace('-', '')}/{primary}"
+			document = HTMLParser(ParserConfig(form=filing.form)).parse(download_text(url))
+			text = rich_to_text(document, width=500)
+			metadata["text_source_url"] = url
 		if not isinstance(text, str) or not text.strip():
 			raise ValueError("Original filing text is unavailable")
 		prepared.append((metadata, frames, text))

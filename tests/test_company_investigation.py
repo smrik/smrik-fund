@@ -294,8 +294,9 @@ CASE = Path(__file__).resolve().parents[1] / "data/history/20260919/BBWI/source"
 
 
 @pytest.mark.skipif(not CASE.exists(), reason="Local frozen SEC case required")
+@pytest.mark.parametrize("transport", ["api", "codex"])
 def test_full_assessment_research_synthesis_revision_and_scenarios(
-	tmp_path, monkeypatch
+	tmp_path, monkeypatch, transport
 ):
 	from smrik_fund import company_research, company_run
 
@@ -310,12 +311,13 @@ def test_full_assessment_research_synthesis_revision_and_scenarios(
 	)
 	finished = []
 	monkeypatch.setattr(
-		company_research, "finish_assessment", lambda *a: finished.append(a)
+		company_research, "finish_assessment", lambda *a, **kw: finished.append((a, kw))
 	)
 	seen = []
 
 	def fake_call(output, name, payload, **kwargs):
-		seen.append((name, copy.deepcopy(payload), kwargs["prices"]["model"]))
+		assert kwargs["transport"] == transport
+		seen.append((name, copy.deepcopy(payload), kwargs["prices"]["model"] if transport == "api" else "codex"))
 		if name == "research":
 			assert (output / "diagnostics/diagnostics.json").exists()
 			d = payload["diagnostics"]
@@ -373,7 +375,7 @@ def test_full_assessment_research_synthesis_revision_and_scenarios(
 				],
 			}
 			if name == "analyst":
-				assert kwargs["prices"]["model"] == "sol"
+				assert kwargs["prices"]["model"] == "sol" if transport == "api" else kwargs["prices"] is None
 				assert len(payload["research"]["investigations"]) == 1
 				answer["research_reconciliation"] = [
 					{
@@ -410,6 +412,7 @@ def test_full_assessment_research_synthesis_revision_and_scenarios(
 		out,
 		live=True,
 		assess=True,
+		transport=transport,
 		price_dir=tmp_path,
 		native_excel=False,
 	)
@@ -420,7 +423,7 @@ def test_full_assessment_research_synthesis_revision_and_scenarios(
 		"review-0",
 		"review-1",
 	]
-	assert [x[2] for x in seen] == ["sol", "luna", "sol", "sol", "sol"]
+	assert [x[2] for x in seen] == (["sol", "luna", "sol", "sol", "sol"] if transport == "api" else ["codex"] * 5)
 	assert result["status"] == "SYSTEM_REVIEWED_DEVELOPMENT"
 	model = company_run.read(out / "reviewed/model.json")
 	assert (
@@ -433,4 +436,5 @@ def test_full_assessment_research_synthesis_revision_and_scenarios(
 		== model["controls"]["cogs_ratio"]
 	)
 	assert len(finished) == 1
+	assert finished[0][1]["transport"] == transport
 	assert "Research decisions" in (out / "ASSESSMENT.md").read_text(encoding="utf-8")

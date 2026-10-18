@@ -134,7 +134,7 @@ def question_packet(case_dir, packet, question):
 
 
 def investigate(
-	case_dir, model, packet, diagnostics, output, budget_path, price_dir, progress=None
+	case_dir, model, packet, diagnostics, output, budget_path, price_dir, progress=None, *, transport="api"
 ):
 	from smrik_fund.company_run import call_model, read, save
 
@@ -155,7 +155,8 @@ def investigate(
 		review=False,
 		reasoning_effort="high",
 		budget_path=budget_path,
-		prices=read(price_dir / "sol-price-snapshot.json"),
+		transport=transport,
+		prices=read(price_dir / "sol-price-snapshot.json") if transport == "api" else None,
 		response_schema=plan_schema,
 		validator=lambda r: validate_plan(r, diagnostics, refs),
 	)
@@ -199,7 +200,8 @@ def investigate(
 				payload,
 				review=False,
 				budget_path=budget_path,
-				prices=read(price_dir / "luna-price-snapshot.json"),
+				transport=transport,
+				prices=read(price_dir / "luna-price-snapshot.json") if transport == "api" else None,
 				response_schema=finding_schema(local_refs, question["driver_ids"]),
 				validator=lambda r, refs=local_refs, ids=question["driver_ids"]: (
 					validate_finding(r, refs, ids)
