@@ -10,3 +10,6 @@ what exists. Status can be stated in the issue body.
 Read the issue, its comments, and linked evidence before work. Link the PR and report
 completion checks. A label or comment alone does not guarantee agent execution.
 PRs as a request surface: no.
+
+For triage roles, read `docs/agents/triage-labels.md`. Use its body-field mapping
+while preserving existing labels and boards.
