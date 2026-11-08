@@ -76,3 +76,7 @@ native Excel. They are not a clean-clone test suite. Missing research artifacts
 are distinct from provider or accounting failures. The status document records
 the real-case checks performed and known limits.
 
+
+## Project workflow
+
+Use [Project workflow](docs/PATRIK_WORKFLOW.md) for tasks, proposals, feedback and review.
