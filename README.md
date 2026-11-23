@@ -1,35 +1,69 @@
 # smrik-fund
 
-Parse the latest 10-K for one ticker:
+A Python prototype for reading a company's latest annual SEC filing and saving
+its income statement, balance sheet and cash flow statement as CSV files.
 
-```powershell
-smrik-fund parse MSFT
+## Current status
+
+The CLI and the older artifact pipeline need an integration fix before the
+`parse` command is ready to use. The current statement module calls `os.getenv`
+without importing `os`. The tests also expect artifact types and functions that
+the module no longer exports. These are known source-level blockers; this
+README update does not fix them or claim a successful runtime check.
+
+## Development setup
+
+Use Python 3.13 or later and `uv`:
+
+```bash
+uv sync --frozen
+uv run smrik-fund --help
 ```
 
-The command writes machine-readable files:
+The dependencies and command entry point are defined in `pyproject.toml`; exact
+versions are recorded in `uv.lock`.
+
+## Intended use after the integration fix
+
+Set `EDGAR_IDENTITY` to your name and contact email, then run:
+
+```bash
+export EDGAR_IDENTITY='Your Name your-email@example.com'
+uv run smrik-fund parse MSFT
+```
+
+This command requests the latest 10-K through EdgarTools. The current CLI path
+is designed to write:
 
 ```text
-data/ingestion/MSFT/
-  01_2_edgar/
-    filing_index.csv
-    manifest.json
-    filings/<accession>.txt
-  02_preprocessing/edgar/
-    facts.csv
-    coverage.json
+data/MSFT/
+  income_statement.csv
+  balance_sheet.csv
+  cash_flow_statement.csv
 ```
 
-`facts.csv` has one row per numeric XBRL fact. It keeps both the original
-`concept` and the cross-company `standard_concept`.
+A later run for the same ticker replaces those CSVs. Keep copies when you need
+to compare results over time. Live retrieval needs internet access.
 
-The command also prints the three standard-view statement dimensions and the
-fact count.
+## Code and checks
 
-Code structure:
+- `src/smrik_fund/main.py` defines the CLI.
+- `src/smrik_fund/ingestion/statements.py` implements its current statement path.
+- `ingestion/parser.py`, `facts.py` and `artifacts.py` contain the separate,
+  richer filing and fact pipeline. They are not the current CLI output contract.
+- `tests/test_statements.py` describes the older artifact contract and needs to
+  be aligned with the chosen interface.
 
-- `ingestion/statements.py` is the small public interface.
-- `ingestion/parser.py` loads EdgarTools and builds the statements.
-- `ingestion/facts.py` creates one normalized row per numeric fact.
-- `ingestion/artifacts.py` writes the CSV, JSON, and filing files.
+Run the existing checks after setting up the environment:
 
-Set `SMRIK_EDGAR_USER_AGENT` to use your SEC user-agent string.
+```bash
+uv run python -m unittest discover -s tests -v
+uv run ruff check .
+```
+
+The integration mismatch above must be resolved before treating these checks as
+passing. Keep credentials and downloaded research data outside published changes.
+
+## Project workflow
+
+Use [Project workflow](docs/PATRIK_WORKFLOW.md) for tasks, proposals, feedback and review.
